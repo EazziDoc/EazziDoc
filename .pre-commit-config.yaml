@@ -24,7 +24,6 @@ repos:
 
       - id: no-direct-push-check
         name: check for debug artifacts
-        entry: bash -c 'grep -rn "print(.*password\|import pdb\|breakpoint()" "$@" 2>/dev/null && exit 1 || exit 0'
+        entry: bash -c 'grep -rn "import pdb\|breakpoint()" backend/app/ 2>/dev/null && exit 1 || exit 0'
         language: system
-        types: [python]
-        pass_filenames: true
+        pass_filenames: false

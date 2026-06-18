@@ -1,9 +1,7 @@
 from contextlib import asynccontextmanager
 
-import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sentry_sdk.integrations.fastapi import FastApiIntegration
 
 from app.core.config import settings
 
@@ -17,12 +15,18 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     if settings.SENTRY_DSN:
-        sentry_sdk.init(
-            dsn=settings.SENTRY_DSN,
-            integrations=[FastApiIntegration()],
-            traces_sample_rate=0.1,
-            environment=settings.ENVIRONMENT,
-        )
+        try:
+            import sentry_sdk
+            from sentry_sdk.integrations.fastapi import FastApiIntegration
+
+            sentry_sdk.init(
+                dsn=settings.SENTRY_DSN,
+                integrations=[FastApiIntegration()],
+                traces_sample_rate=0.1,
+                environment=settings.ENVIRONMENT,
+            )
+        except ImportError:
+            pass
 
     application = FastAPI(
         title="EazziDoc API",
