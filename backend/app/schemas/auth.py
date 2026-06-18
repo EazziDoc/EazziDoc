@@ -1,3 +1,4 @@
+import uuid
 from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -39,7 +40,7 @@ class RegisterResponse(BaseModel):
 
 
 class UserResponse(BaseModel):
-    id: str
+    id: uuid.UUID
     email: str
     role: str
     is_verified: bool
