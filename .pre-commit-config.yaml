@@ -1,0 +1,30 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-lint
+        name: ruff lint
+        entry: ruff check --fix
+        language: system
+        types: [python]
+        pass_filenames: true
+
+      - id: ruff-format
+        name: ruff format
+        entry: ruff format
+        language: system
+        types: [python]
+        pass_filenames: true
+
+      - id: detect-private-key
+        name: detect private key
+        entry: bash -c 'grep -rn "sk-\|gsk_\|AIza\|AKIA" "$@" 2>/dev/null && exit 1 || exit 0'
+        language: system
+        pass_filenames: true
+        exclude: "(.env.example|.pre-commit-config.yaml)"
+
+      - id: no-direct-push-check
+        name: check for debug artifacts
+        entry: bash -c 'grep -rn "print(.*password\|import pdb\|breakpoint()" "$@" 2>/dev/null && exit 1 || exit 0'
+        language: system
+        types: [python]
+        pass_filenames: true

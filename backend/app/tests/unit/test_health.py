@@ -1,6 +1,4 @@
 import pytest
-from unittest.mock import patch
-import os
 
 
 @pytest.fixture(autouse=True)
@@ -12,6 +10,7 @@ def mock_settings_env(monkeypatch):
 
 def test_health_endpoint(mock_settings_env):
     from fastapi.testclient import TestClient
+
     from app.main import app
 
     client = TestClient(app)
@@ -21,7 +20,14 @@ def test_health_endpoint(mock_settings_env):
 
 
 def test_diagnosis_status_values():
-    valid_statuses = {"pending", "ai_complete", "under_review", "confirmed", "overridden", "flagged"}
+    valid_statuses = {
+        "pending",
+        "ai_complete",
+        "under_review",
+        "confirmed",
+        "overridden",
+        "flagged",
+    }
     assert "pending" in valid_statuses
     assert "ai_complete" in valid_statuses
 

@@ -1,7 +1,8 @@
+from contextlib import asynccontextmanager
+
+import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
 from app.core.config import settings

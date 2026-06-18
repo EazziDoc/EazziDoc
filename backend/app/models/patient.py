@@ -1,17 +1,17 @@
 import uuid
-from datetime import datetime, date
-from sqlalchemy import String, Date, DateTime, ForeignKey, func
+from datetime import date, datetime
+
+from sqlalchemy import Date, DateTime, ForeignKey, String, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+
 from app.core.database import Base
 
 
 class Patient(Base):
     __tablename__ = "patients"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False
     )
@@ -28,5 +28,9 @@ class Patient(Base):
     )
 
     user: Mapped["User"] = relationship(back_populates="patient")
-    diagnoses: Mapped[list["Diagnosis"]] = relationship(back_populates="patient", cascade="all, delete-orphan")
-    appointments: Mapped[list["Appointment"]] = relationship(back_populates="patient", cascade="all, delete-orphan")
+    diagnoses: Mapped[list["Diagnosis"]] = relationship(
+        back_populates="patient", cascade="all, delete-orphan"
+    )
+    appointments: Mapped[list["Appointment"]] = relationship(
+        back_populates="patient", cascade="all, delete-orphan"
+    )

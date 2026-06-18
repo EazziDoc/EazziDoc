@@ -67,6 +67,7 @@ dev = [
     "anyio==4.6.0",
     "bandit==1.7.10",
     "ruff==0.7.0",
+    "pre-commit==3.8.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -83,7 +84,9 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
-ignore = ["E501"]
+# E501: line length handled by formatter
+# F821: false positives on SQLAlchemy string forward references ("Patient", "Doctor", etc.)
+ignore = ["E501", "F821"]
 
 [tool.bandit]
 exclude_dirs = ["app/tests"]
