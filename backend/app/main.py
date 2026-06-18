@@ -41,9 +41,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Routers registered here as we build them
-    # from app.api.v1.router import router as v1_router
-    # application.include_router(v1_router, prefix="/api/v1")
+    from app.api.v1.router import router as v1_router
+
+    application.include_router(v1_router, prefix="/api/v1")
 
     @application.get("/health")
     async def health():
