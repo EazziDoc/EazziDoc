@@ -1,0 +1,27 @@
+# Dev environment
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Secrets — never in image
+.env
+.env.*
+
+# Model weights — too large, mount or pull at runtime
+*.h5
+*.keras
+*.pt
+*.onnx
+
+# Dev/test files
+app/tests/
+*.log
+
+# Git
+.git/
+.gitignore

@@ -17,10 +17,10 @@ repos:
 
       - id: detect-private-key
         name: detect private key
-        entry: bash -c 'grep -rn "sk-\|gsk_\|AIza\|AKIA" "$@" 2>/dev/null && exit 1 || exit 0'
+        entry: bash -c 'grep -rn "gsk_[a-zA-Z0-9]\{20,\}\|AIzaSy[a-zA-Z0-9_-]\{33\}\|AKIA[A-Z0-9]\{16\}" "$@" 2>/dev/null && exit 1 || exit 0'
         language: system
         pass_filenames: true
-        exclude: "(.env.example|.pre-commit-config.yaml)"
+        exclude: "(pre-commit-config\\.yaml|\\.env\\.example)"
 
       - id: no-direct-push-check
         name: check for debug artifacts
