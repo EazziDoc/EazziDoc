@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+
+# Environment variables — NEVER commit secrets
+.env
+.env.*
+!.env.example
+
+# Model weights
+*.h5
+*.keras
+*.pt
+*.pth
+*.onnx
+*.pb
+models/weights/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Node / Frontend
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Docker
+.docker/
+
+# Uploaded images (use Cloudflare R2 in production)
+backend/app/static/uploads/
