@@ -45,7 +45,8 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
-        run: pip install -e ".[dev]"
+        # ML extras (tensorflow, keras) excluded from CI — too large and not needed for API tests
+        run: pip install --upgrade pip && pip install -e ".[dev]"
 
       - name: Lint (ruff)
         working-directory: backend

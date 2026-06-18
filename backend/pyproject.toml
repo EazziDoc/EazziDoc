@@ -22,21 +22,14 @@ dependencies = [
     # Auth
     "python-jose[cryptography]==3.3.0",
     "passlib[bcrypt]==1.7.4",
+    "bcrypt==3.2.2",
 
     # Storage
     "boto3==1.35.0",
 
-    # AI — report generation
+    # AI — report generation (lightweight, just HTTP clients)
     "groq==0.11.0",
     "google-generativeai==0.8.3",
-
-    # AI — vision
-    "tensorflow==2.16.1",
-    "keras==3.6.0",
-    "tf-keras-vis==0.8.7",
-    "opencv-python-headless==4.10.0.84",
-    "pillow==10.4.0",
-    "numpy==1.26.4",
 
     # Task queue
     "celery[redis]==5.4.0",
@@ -45,7 +38,7 @@ dependencies = [
     "reportlab==4.2.5",
 
     # Validation / settings
-    "pydantic==2.9.2",
+    "pydantic[email]==2.9.2",
     "pydantic-settings==2.5.2",
 
     # Rate limiting
@@ -59,9 +52,20 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# prod: gunicorn for multi-worker production serving
+# ml: heavy vision dependencies — installed in production and ML CI jobs only
+ml = [
+    "tensorflow==2.16.1",
+    "keras==3.6.0",
+    "tf-keras-vis==0.8.7",
+    "opencv-python-headless==4.10.0.84",
+    "pillow==10.4.0",
+    "numpy==1.26.4",
+]
+
+# prod: adds gunicorn for multi-worker production serving
 prod = [
     "gunicorn==23.0.0",
+    "eazzidoc-backend[ml]",
 ]
 
 dev = [
@@ -81,6 +85,7 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
 testpaths = ["app/tests"]
 
 [tool.ruff]
