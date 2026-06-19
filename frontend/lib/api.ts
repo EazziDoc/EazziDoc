@@ -234,6 +234,27 @@ export async function doctorCancelAppointment(id: string) {
   });
 }
 
+// ── payments ──────────────────────────────────────────────────────────────────
+
+export interface PaymentStatus {
+  id: string;
+  appointment_id: string;
+  status: "pending" | "paid" | "failed" | "refunded";
+  amount_cents: number;
+  currency: string;
+}
+
+export async function createCheckoutSession(appointmentId: string) {
+  return req<{ checkout_url: string; payment_id: string }>(
+    `/payments/appointments/${appointmentId}/checkout`,
+    { method: "POST" },
+  );
+}
+
+export async function getAppointmentPayment(appointmentId: string) {
+  return req<PaymentStatus | null>(`/payments/appointments/${appointmentId}`);
+}
+
 // ── admin ─────────────────────────────────────────────────────────────────────
 
 export interface OverviewStats {
