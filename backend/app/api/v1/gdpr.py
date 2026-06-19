@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -261,6 +262,8 @@ async def delete_account(
         current_user.role,
     )
 
-    # Cascade deletes handle Patient/Doctor/Diagnosis/Appointment/RefreshToken
-    await db.delete(current_user)
+    # Use a core DELETE so PostgreSQL's ON DELETE CASCADE handles child rows.
+    # ORM db.delete() tries to nullify FK references in-memory first, which
+    # fights the DB-level cascade and causes NOT NULL violations.
+    await db.execute(delete(User).where(User.id == current_user.id))
     await db.commit()
