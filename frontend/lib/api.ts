@@ -233,3 +233,158 @@ export async function doctorCancelAppointment(id: string) {
     method: "PATCH",
   });
 }
+
+// ── admin ─────────────────────────────────────────────────────────────────────
+
+export interface OverviewStats {
+  total_users: number;
+  total_patients: number;
+  total_doctors: number;
+  verified_doctors: number;
+  total_diagnoses: number;
+  pending_diagnoses: number;
+  ai_complete_diagnoses: number;
+  failed_diagnoses: number;
+  total_appointments: number;
+  new_users_30d: number;
+  new_diagnoses_30d: number;
+}
+
+export interface DiagnosisStats {
+  by_modality: { modality: string; count: number }[];
+  by_status: { status: string; count: number }[];
+  by_model: { model_used: string; count: number }[];
+  by_urgency: { urgency: string; count: number }[];
+  avg_confidence: number | null;
+  avg_time_to_ai_secs: number | null;
+  avg_time_to_review_secs: number | null;
+  override_rate: number | null;
+}
+
+export interface AppointmentStats {
+  total: number;
+  booked: number;
+  confirmed: number;
+  completed: number;
+  cancelled: number;
+  completion_rate: number | null;
+  cancellation_rate: number | null;
+  avg_duration_mins: number | null;
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  role: string;
+  is_verified: boolean;
+  is_active: boolean;
+  created_at: string;
+  display_name: string | null;
+  specialty?: string | null;
+  total_diagnoses?: number;
+  total_appointments?: number;
+}
+
+export interface AdminUserList {
+  users: AdminUser[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface AdminDiagnosis {
+  id: string;
+  patient_id: string;
+  patient_name: string | null;
+  modality: string | null;
+  status: string;
+  model_used: string | null;
+  confidence_score: number | null;
+  urgency: string | null;
+  image_count: number;
+  created_at: string;
+  doctor_reviewed_at: string | null;
+}
+
+export interface AdminDiagnosisList {
+  diagnoses: AdminDiagnosis[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface QueueHealth {
+  workers: { name: string; status: string; active_tasks: number; processed: number | null }[];
+  active_tasks: number;
+  scheduled_tasks: number;
+  reserved_tasks: number;
+  total_tasks_in_queue: number;
+  pending_in_broker: number;
+}
+
+export async function adminGetOverview() {
+  return req<OverviewStats>("/admin/stats/overview");
+}
+
+export async function adminGetDiagnosisStats() {
+  return req<DiagnosisStats>("/admin/stats/diagnoses");
+}
+
+export async function adminGetAppointmentStats() {
+  return req<AppointmentStats>("/admin/stats/appointments");
+}
+
+export async function adminListUsers(params?: {
+  page?: number;
+  role?: string;
+  is_active?: boolean;
+  search?: string;
+}) {
+  const q = new URLSearchParams();
+  if (params?.page) q.set("page", String(params.page));
+  if (params?.role) q.set("role", params.role);
+  if (params?.is_active !== undefined) q.set("is_active", String(params.is_active));
+  if (params?.search) q.set("search", params.search);
+  return req<AdminUserList>(`/admin/users?${q}`);
+}
+
+export async function adminGetUser(id: string) {
+  return req<AdminUser>(`/admin/users/${id}`);
+}
+
+export async function adminUpdateUser(
+  id: string,
+  data: { is_active?: boolean; is_verified?: boolean; role?: string },
+) {
+  return req<AdminUser>(`/admin/users/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function adminListDiagnoses(params?: {
+  page?: number;
+  status?: string;
+  modality?: string;
+  urgency?: string;
+}) {
+  const q = new URLSearchParams();
+  if (params?.page) q.set("page", String(params.page));
+  if (params?.status) q.set("status", params.status);
+  if (params?.modality) q.set("modality", params.modality);
+  if (params?.urgency) q.set("urgency", params.urgency);
+  return req<AdminDiagnosisList>(`/admin/diagnoses?${q}`);
+}
+
+export async function adminRequeueDiagnosis(id: string) {
+  return req<{ queued: boolean; diagnosis_id: string }>(`/admin/diagnoses/${id}/requeue`, {
+    method: "POST",
+  });
+}
+
+export async function adminGetQueueHealth() {
+  return req<QueueHealth>("/admin/queue/health");
+}
+
+// ── doctor: linked patients ───────────────────────────────────────────────────
+
+export async function listMyPatients() {
+  return req<PatientProfile[]>("/doctor/patients");
+}

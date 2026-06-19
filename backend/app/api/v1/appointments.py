@@ -5,11 +5,12 @@ from sqlalchemy.future import select
 from app.core.database import get_db
 from app.core.dependencies import require_role
 from app.models.appointment import Appointment
+from app.models.diagnosis import Diagnosis
 from app.models.doctor import Doctor
 from app.models.patient import Patient
 from app.models.user import User
 from app.schemas.appointment import AppointmentCreate, AppointmentResponse
-from app.schemas.patient import DoctorProfileResponse
+from app.schemas.patient import DoctorProfileResponse, PatientProfileResponse
 
 router = APIRouter(tags=["appointments"])
 
@@ -230,3 +231,43 @@ async def doctor_cancel_appointment(
     await db.commit()
     await db.refresh(appt)
     return appt
+
+
+# ── doctor: list linked patients ───────────────────────────────────────────────
+
+
+@router.get("/doctor/patients", response_model=list[PatientProfileResponse])
+async def list_doctor_patients(
+    current_user: User = Depends(require_role("doctor")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Unique patients linked via appointments or reviewed diagnoses."""
+    doctor = await _get_doctor(db, current_user)
+
+    appt_ids = {
+        row[0]
+        for row in (
+            await db.execute(
+                select(Appointment.patient_id).where(Appointment.doctor_id == doctor.id).distinct()
+            )
+        ).all()
+    }
+    diag_ids = {
+        row[0]
+        for row in (
+            await db.execute(
+                select(Diagnosis.patient_id)
+                .where(Diagnosis.reviewing_doctor_id == doctor.id)
+                .distinct()
+            )
+        ).all()
+    }
+
+    all_ids = appt_ids | diag_ids
+    if not all_ids:
+        return []
+
+    result = await db.execute(
+        select(Patient).where(Patient.id.in_(all_ids)).order_by(Patient.last_name)
+    )
+    return result.scalars().all()

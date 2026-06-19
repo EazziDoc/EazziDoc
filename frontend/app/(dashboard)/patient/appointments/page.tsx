@@ -15,14 +15,20 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Textarea } from "@/components/ui/input";
 import { formatDateTime, statusColor } from "@/lib/utils";
 
-function BookingForm({ prefillDiagnosisId }: { prefillDiagnosisId: string | null }) {
+function BookingForm({
+  prefillDiagnosisId,
+  prefillDoctorId,
+}: {
+  prefillDiagnosisId: string | null;
+  prefillDoctorId: string | null;
+}) {
   const qc = useQueryClient();
   const { data: doctors = [] } = useQuery({
     queryKey: ["doctors"],
     queryFn: listAvailableDoctors,
   });
 
-  const [doctorId, setDoctorId] = useState("");
+  const [doctorId, setDoctorId] = useState(prefillDoctorId ?? "");
   const [scheduledAt, setScheduledAt] = useState("");
   const [duration, setDuration] = useState(30);
   const [notes, setNotes] = useState("");
@@ -199,11 +205,12 @@ function AppointmentList() {
 function AppointmentsPage() {
   const params = useSearchParams();
   const diagnosisId = params.get("diagnosis_id");
+  const doctorId = params.get("doctor_id");
 
   return (
     <div className="max-w-2xl space-y-8">
       <h1 className="text-2xl font-bold text-gray-900">Appointments</h1>
-      <BookingForm prefillDiagnosisId={diagnosisId} />
+      <BookingForm prefillDiagnosisId={diagnosisId} prefillDoctorId={doctorId} />
       <div>
         <h2 className="text-lg font-semibold text-gray-900 mb-4">My appointments</h2>
         <AppointmentList />

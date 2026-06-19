@@ -35,10 +35,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const login = useCallback(async (token: string) => {
+  const login = useCallback(async (token: string): Promise<User> => {
     setAccessToken(token);
     const u = await getMe();
     setUser(u);
+    return u;
   }, []);
 
   const logout = useCallback(async () => {
