@@ -9,14 +9,14 @@ from fastapi import Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from app.core.config import settings
+
 
 def _request_key(request: Request) -> str:
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         try:
             from jose import jwt
-
-            from app.core.config import settings
 
             payload = jwt.decode(
                 auth[7:],
@@ -31,4 +31,8 @@ def _request_key(request: Request) -> str:
     return get_remote_address(request)
 
 
-limiter = Limiter(key_func=_request_key, default_limits=["300/minute"])
+limiter = Limiter(
+    key_func=_request_key,
+    default_limits=["300/minute"],
+    enabled=settings.RATELIMIT_ENABLED,
+)
