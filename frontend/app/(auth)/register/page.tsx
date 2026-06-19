@@ -9,6 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 
+function roleHome(role: string) {
+  if (role === "admin") return "/admin";
+  if (role === "doctor") return "/doctor";
+  return "/patient";
+}
+
 function RegisterForm() {
   const router = useRouter();
   const params = useSearchParams();
@@ -38,8 +44,8 @@ function RegisterForm() {
     try {
       await register({ ...form, role });
       const { access_token } = await login(form.email, form.password);
-      await authLogin(access_token);
-      router.push(role === "doctor" ? "/doctor" : "/patient");
+      const user = await authLogin(access_token);
+      router.push(roleHome(user.role));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {

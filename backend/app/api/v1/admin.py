@@ -1,0 +1,559 @@
+"""
+Admin API — gated to role='admin'.
+All endpoints are under /admin prefix.
+"""
+
+import uuid
+from datetime import UTC, datetime, timedelta
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.core.dependencies import require_role
+from app.models.appointment import Appointment
+from app.models.diagnosis import Diagnosis
+from app.models.doctor import Doctor
+from app.models.patient import Patient
+from app.models.user import User
+from app.schemas.admin import (
+    AdminDiagnosisItem,
+    AdminDiagnosisList,
+    AdminUserDetail,
+    AdminUserItem,
+    AdminUserList,
+    AdminUserUpdate,
+    AppointmentStats,
+    DiagnosisStats,
+    ModalityCount,
+    ModelCount,
+    OverviewStats,
+    QueueHealth,
+    StatusCount,
+    UrgencyCount,
+    WorkerInfo,
+)
+from app.workers.tasks import process_diagnosis
+
+router = APIRouter(prefix="/admin", tags=["admin"])
+
+_require_admin = require_role("admin")
+
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _30d_ago() -> datetime:
+    return _now() - timedelta(days=30)
+
+
+# ── overview ──────────────────────────────────────────────────────────────────
+
+
+@router.get("/stats/overview", response_model=OverviewStats)
+async def stats_overview(
+    _: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    cutoff = _30d_ago()
+
+    total_users = (await db.execute(select(func.count()).select_from(User))).scalar_one()
+    total_patients = (await db.execute(select(func.count()).select_from(Patient))).scalar_one()
+    total_doctors = (await db.execute(select(func.count()).select_from(Doctor))).scalar_one()
+    verified_doctors = (
+        await db.execute(
+            select(func.count()).select_from(Doctor).where(Doctor.is_verified.is_(True))
+        )
+    ).scalar_one()
+    total_diagnoses = (await db.execute(select(func.count()).select_from(Diagnosis))).scalar_one()
+    pending_diagnoses = (
+        await db.execute(
+            select(func.count()).select_from(Diagnosis).where(Diagnosis.status == "pending")
+        )
+    ).scalar_one()
+    ai_complete_diagnoses = (
+        await db.execute(
+            select(func.count()).select_from(Diagnosis).where(Diagnosis.status == "ai_complete")
+        )
+    ).scalar_one()
+    failed_diagnoses = (
+        await db.execute(
+            select(func.count()).select_from(Diagnosis).where(Diagnosis.status == "failed")
+        )
+    ).scalar_one()
+    total_appointments = (
+        await db.execute(select(func.count()).select_from(Appointment))
+    ).scalar_one()
+    new_users_30d = (
+        await db.execute(select(func.count()).select_from(User).where(User.created_at >= cutoff))
+    ).scalar_one()
+    new_diagnoses_30d = (
+        await db.execute(
+            select(func.count()).select_from(Diagnosis).where(Diagnosis.created_at >= cutoff)
+        )
+    ).scalar_one()
+
+    return OverviewStats(
+        total_users=total_users,
+        total_patients=total_patients,
+        total_doctors=total_doctors,
+        verified_doctors=verified_doctors,
+        total_diagnoses=total_diagnoses,
+        pending_diagnoses=pending_diagnoses,
+        ai_complete_diagnoses=ai_complete_diagnoses,
+        failed_diagnoses=failed_diagnoses,
+        total_appointments=total_appointments,
+        new_users_30d=new_users_30d,
+        new_diagnoses_30d=new_diagnoses_30d,
+    )
+
+
+# ── diagnosis stats ───────────────────────────────────────────────────────────
+
+
+@router.get("/stats/diagnoses", response_model=DiagnosisStats)
+async def stats_diagnoses(
+    _: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    # By modality
+    modality_rows = (
+        await db.execute(
+            select(Diagnosis.modality, func.count().label("cnt"))
+            .where(Diagnosis.modality.isnot(None))
+            .group_by(Diagnosis.modality)
+            .order_by(func.count().desc())
+        )
+    ).all()
+    by_modality = [ModalityCount(modality=r.modality, count=r.cnt) for r in modality_rows]
+
+    # By status
+    status_rows = (
+        await db.execute(
+            select(Diagnosis.status, func.count().label("cnt"))
+            .group_by(Diagnosis.status)
+            .order_by(func.count().desc())
+        )
+    ).all()
+    by_status = [StatusCount(status=r.status, count=r.cnt) for r in status_rows]
+
+    # By model
+    model_rows = (
+        await db.execute(
+            select(Diagnosis.model_used, func.count().label("cnt"))
+            .where(Diagnosis.model_used.isnot(None))
+            .group_by(Diagnosis.model_used)
+            .order_by(func.count().desc())
+        )
+    ).all()
+    by_model = [ModelCount(model_used=r.model_used, count=r.cnt) for r in model_rows]
+
+    # By urgency (from report JSONB field)
+    urgency_rows = (
+        await db.execute(
+            select(
+                Diagnosis.report["urgency"].astext.label("urgency"),
+                func.count().label("cnt"),
+            )
+            .where(Diagnosis.report["urgency"].astext.isnot(None))
+            .group_by(Diagnosis.report["urgency"].astext)
+            .order_by(func.count().desc())
+        )
+    ).all()
+    by_urgency = [UrgencyCount(urgency=r.urgency, count=r.cnt) for r in urgency_rows]
+
+    # Avg confidence
+    avg_conf = (
+        await db.execute(
+            select(func.avg(Diagnosis.confidence_score)).where(
+                Diagnosis.confidence_score.isnot(None)
+            )
+        )
+    ).scalar_one()
+
+    # Avg time submission → ai_complete (proxy: updated_at - created_at for ai_complete+)
+    # We don't store a separate ai_completed_at column so we use doctor_reviewed_at - created_at
+    # as a proxy for time-to-review; for time-to-AI we use updated_at on ai_complete records.
+    avg_review_secs = (
+        await db.execute(
+            select(
+                func.avg(
+                    func.extract(
+                        "epoch",
+                        Diagnosis.doctor_reviewed_at - Diagnosis.created_at,
+                    )
+                )
+            ).where(Diagnosis.doctor_reviewed_at.isnot(None))
+        )
+    ).scalar_one()
+
+    # Override rate: overridden / (confirmed + overridden)
+    overridden = (
+        await db.execute(
+            select(func.count()).select_from(Diagnosis).where(Diagnosis.status == "overridden")
+        )
+    ).scalar_one()
+    confirmed = (
+        await db.execute(
+            select(func.count()).select_from(Diagnosis).where(Diagnosis.status == "confirmed")
+        )
+    ).scalar_one()
+    override_rate = overridden / (overridden + confirmed) if (overridden + confirmed) > 0 else None
+
+    return DiagnosisStats(
+        by_modality=by_modality,
+        by_status=by_status,
+        by_model=by_model,
+        by_urgency=by_urgency,
+        avg_confidence=float(avg_conf) if avg_conf else None,
+        avg_time_to_ai_secs=None,  # needs dedicated column; placeholder
+        avg_time_to_review_secs=float(avg_review_secs) if avg_review_secs else None,
+        override_rate=override_rate,
+    )
+
+
+# ── appointment stats ─────────────────────────────────────────────────────────
+
+
+@router.get("/stats/appointments", response_model=AppointmentStats)
+async def stats_appointments(
+    _: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = (
+        await db.execute(
+            select(Appointment.status, func.count().label("cnt")).group_by(Appointment.status)
+        )
+    ).all()
+    counts = {r.status: r.cnt for r in rows}
+    total = sum(counts.values())
+    completed = counts.get("completed", 0)
+    cancelled = counts.get("cancelled", 0)
+
+    avg_dur = (await db.execute(select(func.avg(Appointment.duration_mins)))).scalar_one()
+
+    return AppointmentStats(
+        total=total,
+        booked=counts.get("booked", 0),
+        confirmed=counts.get("confirmed", 0),
+        completed=completed,
+        cancelled=cancelled,
+        completion_rate=completed / total if total else None,
+        cancellation_rate=cancelled / total if total else None,
+        avg_duration_mins=float(avg_dur) if avg_dur else None,
+    )
+
+
+# ── user management ───────────────────────────────────────────────────────────
+
+
+@router.get("/users", response_model=AdminUserList)
+async def list_users(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    role: str | None = Query(default=None),
+    is_active: bool | None = Query(default=None),
+    search: str | None = Query(default=None),
+    _: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    q = select(User)
+    if role:
+        q = q.where(User.role == role)
+    if is_active is not None:
+        q = q.where(User.is_active == is_active)
+    if search:
+        q = q.where(User.email.ilike(f"%{search}%"))
+
+    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
+    users = (
+        (
+            await db.execute(
+                q.order_by(User.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    # Fetch display names: join patients and doctors in Python to avoid complex outer join
+    patient_map: dict[uuid.UUID, str] = {}
+    doctor_map: dict[uuid.UUID, str] = {}
+
+    patient_user_ids = [u.id for u in users if u.role == "patient"]
+    doctor_user_ids = [u.id for u in users if u.role == "doctor"]
+
+    if patient_user_ids:
+        pts = (
+            (await db.execute(select(Patient).where(Patient.user_id.in_(patient_user_ids))))
+            .scalars()
+            .all()
+        )
+        patient_map = {p.user_id: f"{p.first_name} {p.last_name}" for p in pts}
+
+    if doctor_user_ids:
+        docs = (
+            (await db.execute(select(Doctor).where(Doctor.user_id.in_(doctor_user_ids))))
+            .scalars()
+            .all()
+        )
+        doctor_map = {d.user_id: f"{d.first_name} {d.last_name}" for d in docs}
+
+    items = [
+        AdminUserItem(
+            id=u.id,
+            email=u.email,
+            role=u.role,
+            is_verified=u.is_verified,
+            is_active=u.is_active,
+            created_at=u.created_at,
+            display_name=patient_map.get(u.id) or doctor_map.get(u.id),
+        )
+        for u in users
+    ]
+
+    return AdminUserList(users=items, total=total, page=page, page_size=page_size)
+
+
+@router.get("/users/{user_id}", response_model=AdminUserDetail)
+async def get_user(
+    user_id: uuid.UUID,
+    _: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+
+    display_name = None
+    specialty = None
+    total_diagnoses = 0
+    total_appointments = 0
+
+    if user.role == "patient":
+        pt = (
+            await db.execute(select(Patient).where(Patient.user_id == user_id))
+        ).scalar_one_or_none()
+        if pt:
+            display_name = f"{pt.first_name} {pt.last_name}"
+            total_diagnoses = (
+                await db.execute(
+                    select(func.count()).select_from(Diagnosis).where(Diagnosis.patient_id == pt.id)
+                )
+            ).scalar_one()
+            total_appointments = (
+                await db.execute(
+                    select(func.count())
+                    .select_from(Appointment)
+                    .where(Appointment.patient_id == pt.id)
+                )
+            ).scalar_one()
+
+    elif user.role == "doctor":
+        doc = (
+            await db.execute(select(Doctor).where(Doctor.user_id == user_id))
+        ).scalar_one_or_none()
+        if doc:
+            display_name = f"{doc.first_name} {doc.last_name}"
+            specialty = doc.specialty
+            total_appointments = (
+                await db.execute(
+                    select(func.count())
+                    .select_from(Appointment)
+                    .where(Appointment.doctor_id == doc.id)
+                )
+            ).scalar_one()
+
+    return AdminUserDetail(
+        id=user.id,
+        email=user.email,
+        role=user.role,
+        is_verified=user.is_verified,
+        is_active=user.is_active,
+        created_at=user.created_at,
+        display_name=display_name,
+        specialty=specialty,
+        total_diagnoses=total_diagnoses,
+        total_appointments=total_appointments,
+    )
+
+
+@router.patch("/users/{user_id}", response_model=AdminUserDetail)
+async def update_user(
+    user_id: uuid.UUID,
+    body: AdminUserUpdate,
+    current_admin: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    if user.id == current_admin.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot modify your own account")
+
+    if body.is_active is not None:
+        user.is_active = body.is_active
+    if body.is_verified is not None:
+        user.is_verified = body.is_verified
+        # Mirror is_verified onto the Doctor profile if applicable
+        if user.role == "doctor":
+            doc = (
+                await db.execute(select(Doctor).where(Doctor.user_id == user_id))
+            ).scalar_one_or_none()
+            if doc:
+                doc.is_verified = body.is_verified
+    if body.role is not None:
+        user.role = body.role
+
+    await db.commit()
+    await db.refresh(user)
+
+    # Re-use get_user logic
+    return await get_user(user_id, current_admin, db)
+
+
+# ── diagnosis management ───────────────────────────────────────────────────────
+
+
+@router.get("/diagnoses", response_model=AdminDiagnosisList)
+async def list_diagnoses(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    status_filter: str | None = Query(default=None, alias="status"),
+    modality: str | None = Query(default=None),
+    urgency: str | None = Query(default=None),
+    _: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    q = select(Diagnosis)
+    if status_filter:
+        q = q.where(Diagnosis.status == status_filter)
+    if modality:
+        q = q.where(Diagnosis.modality == modality)
+    if urgency:
+        q = q.where(Diagnosis.report["urgency"].astext == urgency)
+
+    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
+    diagnoses = (
+        (
+            await db.execute(
+                q.order_by(Diagnosis.created_at.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    # Fetch patient names
+    patient_ids = list({d.patient_id for d in diagnoses})
+    patient_name_map: dict[uuid.UUID, str] = {}
+    if patient_ids:
+        pts = (await db.execute(select(Patient).where(Patient.id.in_(patient_ids)))).scalars().all()
+        patient_name_map = {p.id: f"{p.first_name} {p.last_name}" for p in pts}
+
+    items = [
+        AdminDiagnosisItem(
+            id=d.id,
+            patient_id=d.patient_id,
+            patient_name=patient_name_map.get(d.patient_id),
+            modality=d.modality,
+            status=d.status,
+            model_used=d.model_used,
+            confidence_score=d.confidence_score,
+            urgency=d.report.get("urgency") if isinstance(d.report, dict) else None,
+            image_count=len(d.image_keys) if d.image_keys else 0,
+            created_at=d.created_at,
+            doctor_reviewed_at=d.doctor_reviewed_at,
+        )
+        for d in diagnoses
+    ]
+
+    return AdminDiagnosisList(diagnoses=items, total=total, page=page, page_size=page_size)
+
+
+@router.post("/diagnoses/{diagnosis_id}/requeue", status_code=status.HTTP_202_ACCEPTED)
+async def requeue_diagnosis(
+    diagnosis_id: uuid.UUID,
+    _: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    dx = (
+        await db.execute(select(Diagnosis).where(Diagnosis.id == diagnosis_id))
+    ).scalar_one_or_none()
+    if not dx:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Diagnosis not found")
+    if dx.status not in {"failed", "pending"}:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Cannot requeue a diagnosis with status '{dx.status}'",
+        )
+
+    dx.status = "pending"
+    await db.commit()
+    process_diagnosis.delay(str(dx.id))
+    return {"queued": True, "diagnosis_id": str(diagnosis_id)}
+
+
+# ── queue / worker health ─────────────────────────────────────────────────────
+
+
+@router.get("/queue/health", response_model=QueueHealth)
+async def queue_health(_: User = Depends(_require_admin)):
+    from app.core.celery_app import celery_app
+
+    inspect = celery_app.control.inspect(timeout=3.0)
+
+    active = inspect.active() or {}
+    scheduled = inspect.scheduled() or {}
+    reserved = inspect.reserved() or {}
+    stats = inspect.stats() or {}
+
+    workers: list[WorkerInfo] = []
+    total_active = 0
+    total_scheduled = 0
+    total_reserved = 0
+
+    all_worker_names = set(active) | set(scheduled) | set(reserved) | set(stats)
+
+    for name in all_worker_names:
+        active_tasks = len(active.get(name) or [])
+        total_active += active_tasks
+        total_scheduled += len(scheduled.get(name) or [])
+        total_reserved += len(reserved.get(name) or [])
+        worker_stats = stats.get(name, {})
+        processed = worker_stats.get("total", {})
+        processed_count = sum(processed.values()) if isinstance(processed, dict) else None
+
+        workers.append(
+            WorkerInfo(
+                name=name,
+                status="online",
+                active_tasks=active_tasks,
+                processed=processed_count,
+            )
+        )
+
+    # Pending task count from broker (best-effort)
+    try:
+        with celery_app.connection_or_acquire() as conn:
+            pending_in_broker = conn.default_channel.queue_declare(
+                queue="celery", passive=True
+            ).message_count
+    except Exception:
+        pending_in_broker = 0
+
+    return QueueHealth(
+        workers=workers,
+        active_tasks=total_active,
+        scheduled_tasks=total_scheduled,
+        reserved_tasks=total_reserved,
+        total_tasks_in_queue=total_active + total_reserved + total_scheduled,
+        pending_in_broker=pending_in_broker,
+    )

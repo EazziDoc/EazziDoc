@@ -9,6 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 
+function roleHome(role: string) {
+  if (role === "admin") return "/admin";
+  if (role === "doctor") return "/doctor";
+  return "/patient";
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const { login: authLogin } = useAuth();
@@ -23,13 +29,8 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const { access_token } = await login(email, password);
-      await authLogin(access_token);
-      // Redirect based on role — authLogin fetches /me
-      const role = (await import("@/lib/api")).getAccessToken();
-      // We'll parse the role from the token or re-fetch; simpler: redirect to /
-      // The auth context sets the user; redirect after a tick
-      router.push("/");
-      // Let the root redirect handle role-based routing
+      const user = await authLogin(access_token);
+      router.push(roleHome(user.role));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {

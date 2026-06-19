@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Activity,
   Calendar,
   FileText,
   Home,
@@ -8,6 +9,8 @@ import {
   Settings,
   Stethoscope,
   Upload,
+  UserCheck,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -19,6 +22,7 @@ const patientLinks = [
   { href: "/patient/upload", label: "Upload Images", icon: Upload },
   { href: "/patient/diagnoses", label: "My Diagnoses", icon: FileText },
   { href: "/patient/appointments", label: "Appointments", icon: Calendar },
+  { href: "/patient/doctors", label: "Find a Doctor", icon: Stethoscope },
   { href: "/patient/settings", label: "Settings", icon: Settings },
 ];
 
@@ -26,7 +30,15 @@ const doctorLinks = [
   { href: "/doctor", label: "Dashboard", icon: Home },
   { href: "/doctor/queue", label: "Review Queue", icon: Stethoscope },
   { href: "/doctor/appointments", label: "Appointments", icon: Calendar },
+  { href: "/doctor/patients", label: "My Patients", icon: UserCheck },
   { href: "/doctor/settings", label: "Settings", icon: Settings },
+];
+
+const adminLinks = [
+  { href: "/admin", label: "Overview", icon: Home },
+  { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/diagnoses", label: "Diagnoses", icon: FileText },
+  { href: "/admin/queue", label: "Queue health", icon: Activity },
 ];
 
 export function Sidebar() {
@@ -34,7 +46,12 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
 
-  const links = user?.role === "doctor" ? doctorLinks : patientLinks;
+  const links =
+    user?.role === "admin"
+      ? adminLinks
+      : user?.role === "doctor"
+        ? doctorLinks
+        : patientLinks;
 
   async function handleLogout() {
     await logout();
@@ -52,7 +69,7 @@ export function Sidebar() {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 space-y-1 p-4">
+      <nav className="flex-1 space-y-1 overflow-y-auto p-4">
         {links.map(({ href, label, icon: Icon }) => (
           <Link
             key={href}
