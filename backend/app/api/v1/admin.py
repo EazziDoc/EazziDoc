@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import require_role
+from app.core.metrics import admin_actions_total
 from app.models.appointment import Appointment
 from app.models.audit_log import AuditLog
 from app.models.diagnosis import Diagnosis
@@ -442,6 +443,7 @@ async def update_user(
             target_id=user_id,
             meta={"changes": changes, "target_email": user.email},
         )
+        admin_actions_total.labels(action=action).inc()
 
     await db.commit()
     await db.refresh(user)

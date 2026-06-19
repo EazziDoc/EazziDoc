@@ -52,6 +52,8 @@ dependencies = [
 
     # Payments
     "stripe>=5.0.0",
+    "prometheus-fastapi-instrumentator==7.0.0",
+    "prometheus-client==0.21.0",
 ]
 
 [project.optional-dependencies]
