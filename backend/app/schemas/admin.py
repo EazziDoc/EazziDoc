@@ -160,3 +160,26 @@ class QueueHealth(BaseModel):
     total_tasks_in_queue: int
     # Counts from broker (may be approximate)
     pending_in_broker: int
+
+
+# ── audit log ─────────────────────────────────────────────────────────────────
+
+
+class AuditLogItem(BaseModel):
+    id: uuid.UUID
+    actor_id: uuid.UUID
+    actor_email: str
+    action: str
+    target_type: str
+    target_id: str
+    meta: dict | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AuditLogList(BaseModel):
+    entries: list[AuditLogItem]
+    total: int
+    page: int
+    page_size: int
