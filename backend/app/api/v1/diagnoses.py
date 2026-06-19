@@ -1,11 +1,12 @@
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.database import get_db
 from app.core.dependencies import require_role
+from app.core.limiter import limiter
 from app.models.diagnosis import Diagnosis
 from app.models.doctor import Doctor
 from app.models.patient import Patient
@@ -43,7 +44,9 @@ async def _owned_diagnosis(db: AsyncSession, diagnosis_id, patient_id) -> Diagno
 
 
 @router.post("", response_model=DiagnosisResponse, status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit("10/hour")
 async def create_diagnosis(
+    request: Request,
     body: DiagnosisCreate,
     current_user: User = Depends(require_role("patient")),
     db: AsyncSession = Depends(get_db),

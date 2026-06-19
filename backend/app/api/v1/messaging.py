@@ -9,13 +9,14 @@ import asyncio
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.database import get_db
 from app.core.dependencies import require_role
+from app.core.limiter import limiter
 from app.models.appointment import Appointment
 from app.models.diagnosis import Diagnosis
 from app.models.doctor import Doctor
@@ -35,7 +36,9 @@ class MessageRequest(BaseModel):
 
 
 @router.post("/patient/message/doctor/{doctor_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("20/hour")
 async def patient_message_doctor(
+    request: Request,
     doctor_id: uuid.UUID,
     body: MessageRequest,
     current_user: User = Depends(require_role("patient")),
@@ -76,7 +79,9 @@ async def patient_message_doctor(
 
 
 @router.post("/doctor/message/patient/{patient_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("20/hour")
 async def doctor_message_patient(
+    request: Request,
     patient_id: uuid.UUID,
     body: MessageRequest,
     current_user: User = Depends(require_role("doctor")),
