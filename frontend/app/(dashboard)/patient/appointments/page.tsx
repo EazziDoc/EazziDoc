@@ -6,6 +6,8 @@ import { Suspense, useState } from "react";
 import {
   bookAppointment,
   cancelAppointment,
+  createCheckoutSession,
+  getAppointmentPayment,
   listAppointments,
   listAvailableDoctors,
 } from "@/lib/api";
@@ -145,6 +147,64 @@ function BookingForm({
   );
 }
 
+function AppointmentCard({ a, onCancel }: { a: import("@/lib/types").Appointment; onCancel: (id: string) => void }) {
+  const [paying, setPaying] = useState(false);
+  const { data: payment } = useQuery({
+    queryKey: ["payment", a.id],
+    queryFn: () => getAppointmentPayment(a.id),
+    enabled: ["booked", "confirmed"].includes(a.status),
+  });
+
+  async function handlePay() {
+    setPaying(true);
+    try {
+      const { checkout_url } = await createCheckoutSession(a.id);
+      window.location.href = checkout_url;
+    } catch {
+      setPaying(false);
+    }
+  }
+
+  const paymentBadge: Record<string, string> = {
+    paid: "bg-green-100 text-green-700",
+    pending: "bg-yellow-100 text-yellow-700",
+    failed: "bg-red-100 text-red-700",
+    refunded: "bg-gray-100 text-gray-600",
+  };
+
+  return (
+    <div className="flex items-start justify-between rounded-xl border border-gray-200 bg-white p-4">
+      <div>
+        <p className="text-sm font-medium text-gray-900">{formatDateTime(a.scheduled_at)}</p>
+        <p className="text-xs text-gray-500 mt-0.5">{a.duration_mins} min</p>
+        {a.notes && <p className="text-xs text-gray-400 mt-1 italic">{a.notes}</p>}
+        {payment && (
+          <span className={`mt-2 inline-block text-xs font-medium px-2 py-0.5 rounded-full ${paymentBadge[payment.status] ?? ""}`}>
+            Payment: {payment.status} · ${((payment.amount_cents) / 100).toFixed(2)}
+          </span>
+        )}
+      </div>
+      <div className="flex flex-col items-end gap-2">
+        <Badge className={statusColor(a.status)}>{a.status}</Badge>
+        {["booked", "confirmed"].includes(a.status) && payment?.status !== "paid" && (
+          <button
+            onClick={handlePay}
+            disabled={paying}
+            className="text-xs font-medium bg-primary-600 text-white px-3 py-1 rounded-lg hover:bg-primary-700 disabled:opacity-50"
+          >
+            {paying ? "Redirecting…" : "Pay now"}
+          </button>
+        )}
+        {["booked", "confirmed"].includes(a.status) && (
+          <button onClick={() => onCancel(a.id)} className="text-xs text-red-500 hover:underline">
+            Cancel
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AppointmentList() {
   const qc = useQueryClient();
   const { data: appointments = [], isLoading } = useQuery({
@@ -172,31 +232,7 @@ function AppointmentList() {
   return (
     <div className="space-y-3">
       {appointments.map((a) => (
-        <div
-          key={a.id}
-          className="flex items-start justify-between rounded-xl border border-gray-200 bg-white p-4"
-        >
-          <div>
-            <p className="text-sm font-medium text-gray-900">
-              {formatDateTime(a.scheduled_at)}
-            </p>
-            <p className="text-xs text-gray-500 mt-0.5">{a.duration_mins} min</p>
-            {a.notes && (
-              <p className="text-xs text-gray-400 mt-1 italic">{a.notes}</p>
-            )}
-          </div>
-          <div className="flex flex-col items-end gap-2">
-            <Badge className={statusColor(a.status)}>{a.status}</Badge>
-            {["booked", "confirmed"].includes(a.status) && (
-              <button
-                onClick={() => cancel(a.id)}
-                className="text-xs text-red-500 hover:underline"
-              >
-                Cancel
-              </button>
-            )}
-          </div>
-        </div>
+        <AppointmentCard key={a.id} a={a} onCancel={cancel} />
       ))}
     </div>
   );
