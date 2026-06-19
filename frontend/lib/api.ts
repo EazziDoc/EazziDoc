@@ -388,3 +388,19 @@ export async function adminGetQueueHealth() {
 export async function listMyPatients() {
   return req<PatientProfile[]>("/doctor/patients");
 }
+
+// ── messaging ─────────────────────────────────────────────────────────────────
+
+export async function messageDoctor(doctorId: string, message: string) {
+  return req<void>(`/patient/message/doctor/${doctorId}`, {
+    method: "POST",
+    body: JSON.stringify({ message }),
+  });
+}
+
+export async function messageDoctorPatient(patientId: string, message: string) {
+  return req<void>(`/doctor/message/patient/${patientId}`, {
+    method: "POST",
+    body: JSON.stringify({ message }),
+  });
+}

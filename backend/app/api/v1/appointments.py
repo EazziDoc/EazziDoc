@@ -1,3 +1,6 @@
+import asyncio
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -11,6 +14,9 @@ from app.models.patient import Patient
 from app.models.user import User
 from app.schemas.appointment import AppointmentCreate, AppointmentResponse
 from app.schemas.patient import DoctorProfileResponse, PatientProfileResponse
+from app.services import email as email_svc
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["appointments"])
 
@@ -54,6 +60,25 @@ def _enforce_transition(appt: Appointment, allowed_from: set, action: str) -> No
             status.HTTP_409_CONFLICT,
             f"Cannot {action} an appointment with status '{appt.status}'",
         )
+
+
+async def _appt_parties(db: AsyncSession, appt: Appointment):
+    """Return (patient, patient_user, doctor, doctor_user) for notification use."""
+    p_row = (
+        await db.execute(
+            select(Patient, User)
+            .join(User, User.id == Patient.user_id)
+            .where(Patient.id == appt.patient_id)
+        )
+    ).first()
+    d_row = (
+        await db.execute(
+            select(Doctor, User)
+            .join(User, User.id == Doctor.user_id)
+            .where(Doctor.id == appt.doctor_id)
+        )
+    ).first()
+    return p_row, d_row
 
 
 # ── public: browse doctors ────────────────────────────────────────────────────
@@ -100,6 +125,26 @@ async def book_appointment(
     db.add(appt)
     await db.commit()
     await db.refresh(appt)
+
+    try:
+        p_row, d_row = await _appt_parties(db, appt)
+        if p_row and d_row:
+            patient, _ = p_row
+            doctor, doctor_user = d_row
+            asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: email_svc.send_appointment_booked_to_doctor(
+                    doctor_email=doctor_user.email,
+                    doctor_name=f"{doctor.first_name} {doctor.last_name}",
+                    patient_name=f"{patient.first_name} {patient.last_name}",
+                    scheduled_at=appt.scheduled_at,
+                    duration_mins=appt.duration_mins,
+                    appointment_id=str(appt.id),
+                ),
+            )
+    except Exception:
+        logger.exception("book notification failed for appt %s", appt.id)
+
     return appt
 
 
@@ -153,6 +198,24 @@ async def patient_cancel_appointment(
     appt.status = "cancelled"
     await db.commit()
     await db.refresh(appt)
+
+    try:
+        _, d_row = await _appt_parties(db, appt)
+        if d_row:
+            doctor, doctor_user = d_row
+            asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: email_svc.send_appointment_cancelled(
+                    to_email=doctor_user.email,
+                    to_name=f"Dr. {doctor.first_name} {doctor.last_name}",
+                    other_party_name=f"{patient.first_name} {patient.last_name}",
+                    scheduled_at=appt.scheduled_at,
+                    cancelled_by="patient",
+                ),
+            )
+    except Exception:
+        logger.exception("cancel notification failed for appt %s", appt.id)
+
     return appt
 
 
@@ -190,6 +253,24 @@ async def confirm_appointment(
     appt.status = "confirmed"
     await db.commit()
     await db.refresh(appt)
+
+    try:
+        p_row, _ = await _appt_parties(db, appt)
+        if p_row:
+            patient, patient_user = p_row
+            asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: email_svc.send_appointment_confirmed_to_patient(
+                    patient_email=patient_user.email,
+                    patient_name=f"{patient.first_name} {patient.last_name}",
+                    doctor_name=f"{doctor.first_name} {doctor.last_name}",
+                    scheduled_at=appt.scheduled_at,
+                    duration_mins=appt.duration_mins,
+                ),
+            )
+    except Exception:
+        logger.exception("confirm notification failed for appt %s", appt.id)
+
     return appt
 
 
@@ -230,6 +311,23 @@ async def doctor_cancel_appointment(
     appt.status = "cancelled"
     await db.commit()
     await db.refresh(appt)
+
+    try:
+        p_row, _ = await _appt_parties(db, appt)
+        if p_row:
+            patient, patient_user = p_row
+            asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: email_svc.send_appointment_cancelled(
+                    to_email=patient_user.email,
+                    to_name=f"{patient.first_name} {patient.last_name}",
+                    other_party_name=f"{doctor.first_name} {doctor.last_name}",
+                    scheduled_at=appt.scheduled_at,
+                    cancelled_by="doctor",
+                ),
+            )
+    except Exception:
+        logger.exception("doctor-cancel notification failed for appt %s", appt.id)
     return appt
 
 

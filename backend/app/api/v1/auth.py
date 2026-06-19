@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
@@ -25,6 +27,9 @@ from app.schemas.auth import (
     TokenResponse,
     UserResponse,
 )
+from app.services import email as email_svc
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -64,6 +69,19 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
         db.add(Doctor(user_id=user.id, first_name=body.first_name, last_name=body.last_name))
 
     await db.commit()
+
+    try:
+        asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: email_svc.send_welcome(
+                email=body.email,
+                name=body.first_name,
+                role=body.role,
+            ),
+        )
+    except Exception:
+        logger.exception("Welcome email failed for %s", body.email)
+
     return RegisterResponse(user_id=str(user.id), email=user.email, role=user.role)
 
 

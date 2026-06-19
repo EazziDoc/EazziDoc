@@ -1,3 +1,6 @@
+import asyncio
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -13,6 +16,9 @@ from app.schemas.patient import (
     PatientProfileResponse,
     PatientProfileUpdate,
 )
+from app.services import email as email_svc
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["profiles"])
 
@@ -53,6 +59,20 @@ async def update_my_patient_profile(
 
     await db.commit()
     await db.refresh(patient)
+
+    if updates:
+        try:
+            asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: email_svc.send_settings_updated(
+                    email=current_user.email,
+                    name=patient.first_name,
+                    changed_fields=list(updates.keys()),
+                ),
+            )
+        except Exception:
+            logger.exception("Settings email failed for user %s", current_user.id)
+
     return patient
 
 
@@ -92,6 +112,20 @@ async def update_my_doctor_profile(
 
     await db.commit()
     await db.refresh(doctor)
+
+    if updates:
+        try:
+            asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: email_svc.send_settings_updated(
+                    email=current_user.email,
+                    name=doctor.first_name,
+                    changed_fields=list(updates.keys()),
+                ),
+            )
+        except Exception:
+            logger.exception("Settings email failed for user %s", current_user.id)
+
     return doctor
 
 

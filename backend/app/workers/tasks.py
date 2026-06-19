@@ -10,7 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.models.diagnosis import Diagnosis
+from app.models.patient import Patient
+from app.models.user import User
 from app.services.ai import gemini, groq_client
+from app.services.email import send_diagnosis_ready
 from app.services.storage import storage_service
 
 logger = logging.getLogger(__name__)
@@ -75,6 +78,29 @@ async def _run_pipeline(diagnosis_id: str) -> None:
 
         await db.commit()
         logger.info("Diagnosis %s processed — status: %s", diagnosis_id, diagnosis.status)
+
+        # ── email notification ────────────────────────────────────────────────
+        if diagnosis.status == "ai_complete":
+            try:
+                row = (
+                    await db.execute(
+                        select(Patient, User)
+                        .join(User, User.id == Patient.user_id)
+                        .where(Patient.id == diagnosis.patient_id)
+                    )
+                ).first()
+                if row:
+                    patient, user = row
+                    urgency = (diagnosis.report or {}).get("urgency")
+                    send_diagnosis_ready(
+                        patient_email=user.email,
+                        patient_name=f"{patient.first_name} {patient.last_name}",
+                        diagnosis_id=diagnosis_id,
+                        modality=diagnosis.modality or "Unknown",
+                        urgency=urgency,
+                    )
+            except Exception:
+                logger.exception("Diagnosis-ready email failed for %s", diagnosis_id)
 
 
 @celery_app.task(bind=True, name="tasks.process_diagnosis", max_retries=3, default_retry_delay=60)
