@@ -15,6 +15,7 @@ from app.models.user import User
 from app.schemas.appointment import AppointmentCreate, AppointmentResponse
 from app.schemas.patient import DoctorProfileResponse, PatientProfileResponse
 from app.services import email as email_svc
+from app.services import payments as payments_svc
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +196,7 @@ async def patient_cancel_appointment(
     if appt.patient_id != patient.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your appointment")
     _enforce_transition(appt, _PATIENT_CANCEL_FROM, "cancel")
+    await payments_svc.refund_appointment_payment(db, appt.id)
     appt.status = "cancelled"
     await db.commit()
     await db.refresh(appt)
@@ -308,6 +310,7 @@ async def doctor_cancel_appointment(
     if appt.doctor_id != doctor.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your appointment")
     _enforce_transition(appt, _DOCTOR_CANCEL_FROM, "cancel")
+    await payments_svc.refund_appointment_payment(db, appt.id)
     appt.status = "cancelled"
     await db.commit()
     await db.refresh(appt)

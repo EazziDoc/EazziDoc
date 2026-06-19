@@ -49,6 +49,9 @@ dependencies = [
 
     # Monitoring
     "sentry-sdk[fastapi]==2.17.0",
+
+    # Payments
+    "stripe>=5.0.0",
     "prometheus-fastapi-instrumentator==7.0.0",
     "prometheus-client==0.21.0",
 ]
