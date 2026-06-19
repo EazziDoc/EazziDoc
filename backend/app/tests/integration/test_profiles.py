@@ -1,7 +1,7 @@
 from httpx import AsyncClient
 
 PATIENT = {
-    "email": "patient@profiles.test",
+    "email": "patient@profile-tests.dev",
     "password": "TestPass1",
     "role": "patient",
     "first_name": "Ada",
@@ -9,7 +9,7 @@ PATIENT = {
 }
 
 DOCTOR = {
-    "email": "doctor@profiles.test",
+    "email": "doctor@profile-tests.dev",
     "password": "DoctorPass1",
     "role": "doctor",
     "first_name": "Emeka",

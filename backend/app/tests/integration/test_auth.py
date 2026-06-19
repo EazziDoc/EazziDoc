@@ -1,7 +1,7 @@
 from httpx import AsyncClient
 
 PATIENT = {
-    "email": "patient@auth.test",
+    "email": "patient@auth-tests.dev",
     "password": "TestPass1",
     "role": "patient",
     "first_name": "Ada",
@@ -9,7 +9,7 @@ PATIENT = {
 }
 
 DOCTOR = {
-    "email": "doctor@auth.test",
+    "email": "doctor@auth-tests.dev",
     "password": "DoctorPass1",
     "role": "doctor",
     "first_name": "Emeka",
@@ -43,7 +43,7 @@ async def test_register_duplicate_email(client: AsyncClient):
 async def test_register_weak_password(client: AsyncClient):
     response = await client.post(
         "/api/v1/auth/register",
-        json={**PATIENT, "email": "new@auth.test", "password": "weakpass"},
+        json={**PATIENT, "email": "new@auth-tests.dev", "password": "weakpass"},
     )
     assert response.status_code == 422
 
@@ -84,7 +84,7 @@ async def test_login_wrong_password(client: AsyncClient):
 async def test_login_unknown_email(client: AsyncClient):
     response = await client.post(
         "/api/v1/auth/login",
-        json={"email": "nobody@auth.test", "password": "TestPass1"},
+        json={"email": "nobody@auth-tests.dev", "password": "TestPass1"},
     )
     assert response.status_code == 401
 
