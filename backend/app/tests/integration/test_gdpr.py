@@ -94,7 +94,8 @@ async def test_patient_can_delete_own_account(client: AsyncClient):
         client, {**PATIENT_DATA, "email": "delete-patient@gdpr-tests.dev"}
     )
 
-    resp = await client.delete(
+    resp = await client.request(
+        "DELETE",
         "/api/v1/me/account",
         json={"password": PATIENT_DATA["password"]},
         headers={"Authorization": f"Bearer {token}"},
@@ -115,7 +116,8 @@ async def test_deletion_requires_correct_password(client: AsyncClient):
         client, {**PATIENT_DATA, "email": "wrongpw-patient@gdpr-tests.dev"}
     )
 
-    resp = await client.delete(
+    resp = await client.request(
+        "DELETE",
         "/api/v1/me/account",
         json={"password": "WrongPassword999!"},
         headers={"Authorization": f"Bearer {token}"},
@@ -126,7 +128,7 @@ async def test_deletion_requires_correct_password(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_deletion_requires_auth(client: AsyncClient):
-    resp = await client.delete("/api/v1/me/account", json={"password": "anything"})
+    resp = await client.request("DELETE", "/api/v1/me/account", json={"password": "anything"})
     assert resp.status_code == 403
 
 
@@ -159,7 +161,8 @@ async def test_doctor_with_pending_appointment_cannot_delete(client: AsyncClient
         pytest.skip("Could not book appointment")
 
     # Doctor should be blocked from deleting while appointment is pending
-    resp = await client.delete(
+    resp = await client.request(
+        "DELETE",
         "/api/v1/me/account",
         json={"password": DOCTOR_DATA["password"]},
         headers={"Authorization": f"Bearer {doctor_token}"},
@@ -174,7 +177,8 @@ async def test_doctor_with_no_appointments_can_delete(client: AsyncClient):
         client, {**DOCTOR_DATA, "email": "nodoc-delete@gdpr-tests.dev"}
     )
 
-    resp = await client.delete(
+    resp = await client.request(
+        "DELETE",
         "/api/v1/me/account",
         json={"password": DOCTOR_DATA["password"]},
         headers={"Authorization": f"Bearer {token}"},
