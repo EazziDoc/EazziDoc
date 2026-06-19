@@ -12,6 +12,7 @@ build/
 .venv/
 venv/
 env/
+eazzidoc/
 
 # Environment variables — NEVER commit secrets
 .env

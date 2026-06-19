@@ -17,10 +17,9 @@ repos:
 
       - id: detect-private-key
         name: detect private key
-        entry: bash -c 'grep -rn "gsk_[a-zA-Z0-9]\{20,\}\|AIzaSy[a-zA-Z0-9_-]\{33\}\|AKIA[A-Z0-9]\{16\}" "$@" 2>/dev/null && exit 1 || exit 0'
+        entry: bash -c 'git diff --staged | grep -E "^\+(.*gsk_[a-zA-Z0-9]{20,}|.*AIzaSy[a-zA-Z0-9_-]{33}|.*AKIA[A-Z0-9]{16})" && exit 1 || exit 0'
         language: system
-        pass_filenames: true
-        exclude: "(pre-commit-config\\.yaml|\\.env\\.example)"
+        pass_filenames: false
 
       - id: no-direct-push-check
         name: check for debug artifacts
