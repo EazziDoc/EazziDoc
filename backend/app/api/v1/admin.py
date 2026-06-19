@@ -154,14 +154,17 @@ async def stats_diagnoses(
     by_model = [ModelCount(model_used=r.model_used, count=r.cnt) for r in model_rows]
 
     # By urgency (from report JSONB field)
+    # Use func.jsonb_extract_path_text so SELECT and GROUP BY share one expression,
+    # avoiding the "$1 vs $3" parameter-identity issue that confuses the PG planner.
+    urgency_expr = func.jsonb_extract_path_text(Diagnosis.report, "urgency")
     urgency_rows = (
         await db.execute(
             select(
-                Diagnosis.report["urgency"].astext.label("urgency"),
+                urgency_expr.label("urgency"),
                 func.count().label("cnt"),
             )
-            .where(Diagnosis.report["urgency"].astext.isnot(None))
-            .group_by(Diagnosis.report["urgency"].astext)
+            .where(urgency_expr.isnot(None))
+            .group_by(urgency_expr)
             .order_by(func.count().desc())
         )
     ).all()
@@ -508,37 +511,38 @@ async def requeue_diagnosis(
 async def queue_health(_: User = Depends(_require_admin)):
     from app.core.celery_app import celery_app
 
-    inspect = celery_app.control.inspect(timeout=3.0)
-
-    active = inspect.active() or {}
-    scheduled = inspect.scheduled() or {}
-    reserved = inspect.reserved() or {}
-    stats = inspect.stats() or {}
-
     workers: list[WorkerInfo] = []
     total_active = 0
     total_scheduled = 0
     total_reserved = 0
 
-    all_worker_names = set(active) | set(scheduled) | set(reserved) | set(stats)
+    try:
+        inspect = celery_app.control.inspect(timeout=3.0)
+        active = inspect.active() or {}
+        scheduled = inspect.scheduled() or {}
+        reserved = inspect.reserved() or {}
+        stats = inspect.stats() or {}
 
-    for name in all_worker_names:
-        active_tasks = len(active.get(name) or [])
-        total_active += active_tasks
-        total_scheduled += len(scheduled.get(name) or [])
-        total_reserved += len(reserved.get(name) or [])
-        worker_stats = stats.get(name, {})
-        processed = worker_stats.get("total", {})
-        processed_count = sum(processed.values()) if isinstance(processed, dict) else None
+        for name in set(active) | set(scheduled) | set(reserved) | set(stats):
+            active_tasks = len(active.get(name) or [])
+            total_active += active_tasks
+            total_scheduled += len(scheduled.get(name) or [])
+            total_reserved += len(reserved.get(name) or [])
+            worker_stats = stats.get(name, {})
+            processed = worker_stats.get("total", {})
+            processed_count = sum(processed.values()) if isinstance(processed, dict) else None
 
-        workers.append(
-            WorkerInfo(
-                name=name,
-                status="online",
-                active_tasks=active_tasks,
-                processed=processed_count,
+            workers.append(
+                WorkerInfo(
+                    name=name,
+                    status="online",
+                    active_tasks=active_tasks,
+                    processed=processed_count,
+                )
             )
-        )
+    except Exception:
+        # Celery/Redis unavailable — return empty but valid structure
+        pass
 
     # Pending task count from broker (best-effort)
     try:

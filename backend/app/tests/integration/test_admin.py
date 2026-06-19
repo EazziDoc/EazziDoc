@@ -163,7 +163,10 @@ async def test_list_users_search_by_email(client: AsyncClient):
 
 async def test_get_user_detail_patient(client: AsyncClient):
     token = await _create_admin(client)
-    reg = await client.post("/api/v1/auth/register", json=PATIENT_DATA)
+    reg = await client.post(
+        "/api/v1/auth/register",
+        json={**PATIENT_DATA, "email": "patient-detail@admin-tests.dev"},
+    )
     user_id = reg.json()["user_id"]
 
     r = await client.get(f"/api/v1/admin/users/{user_id}", headers=_auth(token))
@@ -185,7 +188,10 @@ async def test_get_user_detail_not_found(client: AsyncClient):
 
 async def test_deactivate_user(client: AsyncClient):
     token = await _create_admin(client)
-    reg = await client.post("/api/v1/auth/register", json=PATIENT_DATA)
+    reg = await client.post(
+        "/api/v1/auth/register",
+        json={**PATIENT_DATA, "email": "patient-deactivate@admin-tests.dev"},
+    )
     user_id = reg.json()["user_id"]
 
     r = await client.patch(
@@ -199,7 +205,10 @@ async def test_deactivate_user(client: AsyncClient):
 
 async def test_verify_doctor(client: AsyncClient):
     token = await _create_admin(client)
-    reg = await client.post("/api/v1/auth/register", json=DOCTOR_DATA)
+    reg = await client.post(
+        "/api/v1/auth/register",
+        json={**DOCTOR_DATA, "email": "doctor-verify@admin-tests.dev"},
+    )
     user_id = reg.json()["user_id"]
 
     r = await client.patch(
