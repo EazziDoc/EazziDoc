@@ -22,8 +22,8 @@ class Diagnosis(Base):
         UUID(as_uuid=True), ForeignKey("doctors.id", ondelete="SET NULL"), nullable=True
     )
 
-    # Image URLs (stored in Cloudflare R2)
-    original_image_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Image object keys in Cloudflare R2 (1-5 views per diagnosis)
+    image_keys: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
     gradcam_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # Modality: chest_xray | fundus | skin | brain_mri | mammography
