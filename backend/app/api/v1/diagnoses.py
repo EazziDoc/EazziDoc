@@ -7,6 +7,7 @@ from sqlalchemy.future import select
 from app.core.database import get_db
 from app.core.dependencies import require_role
 from app.models.diagnosis import Diagnosis
+from app.models.doctor import Doctor
 from app.models.patient import Patient
 from app.models.user import User
 from app.schemas.diagnosis import DiagnosisCreate, DiagnosisResponse, DoctorReviewRequest
@@ -135,12 +136,19 @@ async def review_diagnosis(
     current_user: User = Depends(require_role("doctor")),
     db: AsyncSession = Depends(get_db),
 ):
+    doctor_result = await db.execute(select(Doctor).where(Doctor.user_id == current_user.id))
+    doctor = doctor_result.scalar_one_or_none()
+    if not doctor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Doctor profile not found"
+        )
+
     result = await db.execute(select(Diagnosis).where(Diagnosis.id == diagnosis_id))
     dx = result.scalar_one_or_none()
     if not dx:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Diagnosis not found")
 
-    dx.reviewing_doctor_id = current_user.id
+    dx.reviewing_doctor_id = doctor.id
     dx.doctor_notes = body.notes
     dx.status = body.status
     dx.doctor_reviewed_at = datetime.now(UTC)
