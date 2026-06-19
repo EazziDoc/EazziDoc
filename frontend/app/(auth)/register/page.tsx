@@ -6,7 +6,7 @@ import { Suspense, useState } from "react";
 import { login, register } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Input, PasswordInput } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 
 function roleHome(role: string) {
@@ -104,9 +104,8 @@ function RegisterForm() {
           required
           autoComplete="email"
         />
-        <Input
+        <PasswordInput
           id="password"
-          type="password"
           label="Password"
           placeholder="Min 8 chars, 1 uppercase, 1 digit"
           value={form.password}

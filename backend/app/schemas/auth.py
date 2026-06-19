@@ -45,5 +45,7 @@ class UserResponse(BaseModel):
     role: str
     is_verified: bool
     is_active: bool
+    first_name: str | None = None
+    last_name: str | None = None
 
     model_config = {"from_attributes": True}

@@ -189,5 +189,24 @@ async def logout(
 
 
 @router.get("/me", response_model=UserResponse)
-async def me(current_user: User = Depends(get_current_user)):
-    return current_user
+async def me(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    first_name = last_name = None
+    if current_user.role == "patient":
+        result = await db.execute(select(Patient).where(Patient.user_id == current_user.id))
+        profile = result.scalar_one_or_none()
+        if profile:
+            first_name, last_name = profile.first_name, profile.last_name
+    elif current_user.role == "doctor":
+        result = await db.execute(select(Doctor).where(Doctor.user_id == current_user.id))
+        profile = result.scalar_one_or_none()
+        if profile:
+            first_name, last_name = profile.first_name, profile.last_name
+    return UserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        role=current_user.role,
+        is_verified=current_user.is_verified,
+        is_active=current_user.is_active,
+        first_name=first_name,
+        last_name=last_name,
+    )
