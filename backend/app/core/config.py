@@ -47,6 +47,8 @@ class Settings(BaseSettings):
 
     # Monitoring
     SENTRY_DSN: str = ""
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.1
+    SENTRY_PROFILES_SAMPLE_RATE: float = 0.0
 
     # CORS
     BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000"]
