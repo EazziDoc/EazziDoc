@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 import uuid
 
 from sqlalchemy import select
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.celery_app import celery_app
 from app.core.config import settings
+from app.core.metrics import diagnoses_total, diagnosis_pipeline_seconds
 from app.models.diagnosis import Diagnosis
 from app.models.patient import Patient
 from app.models.user import User
@@ -26,6 +28,7 @@ def _make_session() -> async_sessionmaker:
 
 async def _run_pipeline(diagnosis_id: str) -> None:
     SessionLocal = _make_session()
+    _start = time.perf_counter()
 
     async with SessionLocal() as db:
         result = await db.execute(select(Diagnosis).where(Diagnosis.id == uuid.UUID(diagnosis_id)))
@@ -77,6 +80,9 @@ async def _run_pipeline(diagnosis_id: str) -> None:
             diagnosis.report = {"error": "AI report generation failed"}
 
         await db.commit()
+        elapsed = time.perf_counter() - _start
+        diagnoses_total.labels(status=diagnosis.status).inc()
+        diagnosis_pipeline_seconds.observe(elapsed)
         logger.info("Diagnosis %s processed — status: %s", diagnosis_id, diagnosis.status)
 
         # ── email notification ────────────────────────────────────────────────

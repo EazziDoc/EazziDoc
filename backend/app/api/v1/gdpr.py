@@ -18,6 +18,7 @@ from sqlalchemy.future import select
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.metrics import account_deletions_total
 from app.core.security import verify_password
 from app.models.appointment import Appointment
 from app.models.diagnosis import Diagnosis
@@ -261,6 +262,7 @@ async def delete_account(
         current_user.email,
         current_user.role,
     )
+    account_deletions_total.labels(role=current_user.role).inc()
 
     # Use a core DELETE so PostgreSQL's ON DELETE CASCADE handles child rows.
     # ORM db.delete() tries to nullify FK references in-memory first, which

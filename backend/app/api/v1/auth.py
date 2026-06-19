@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.limiter import limiter
+from app.core.metrics import registrations_total
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -71,6 +72,7 @@ async def register(request: Request, body: RegisterRequest, db: AsyncSession = D
         db.add(Doctor(user_id=user.id, first_name=body.first_name, last_name=body.last_name))
 
     await db.commit()
+    registrations_total.labels(role=body.role).inc()
 
     try:
         asyncio.get_event_loop().run_in_executor(
