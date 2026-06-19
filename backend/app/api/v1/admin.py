@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import require_role
 from app.models.appointment import Appointment
+from app.models.audit_log import AuditLog
 from app.models.diagnosis import Diagnosis
 from app.models.doctor import Doctor
 from app.models.patient import Patient
@@ -25,6 +26,8 @@ from app.schemas.admin import (
     AdminUserList,
     AdminUserUpdate,
     AppointmentStats,
+    AuditLogItem,
+    AuditLogList,
     DiagnosisStats,
     ModalityCount,
     ModelCount,
@@ -34,6 +37,7 @@ from app.schemas.admin import (
     UrgencyCount,
     WorkerInfo,
 )
+from app.services.audit import log_action
 from app.workers.tasks import process_diagnosis
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -50,6 +54,17 @@ def _now() -> datetime:
 
 def _30d_ago() -> datetime:
     return _now() - timedelta(days=30)
+
+
+def _infer_action(changes: dict) -> str:
+    """Return the most descriptive action string for the set of field changes."""
+    if "role" in changes:
+        return "user.role_changed"
+    if "is_active" in changes:
+        return "user.activated" if changes["is_active"]["to"] else "user.deactivated"
+    if "is_verified" in changes:
+        return "doctor.verified" if changes["is_verified"]["to"] else "doctor.unverified"
+    return "user.updated"
 
 
 # ── overview ──────────────────────────────────────────────────────────────────
@@ -399,24 +414,38 @@ async def update_user(
     if user.id == current_admin.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot modify your own account")
 
-    if body.is_active is not None:
+    changes: dict = {}
+
+    if body.is_active is not None and body.is_active != user.is_active:
+        changes["is_active"] = {"from": user.is_active, "to": body.is_active}
         user.is_active = body.is_active
-    if body.is_verified is not None:
+    if body.is_verified is not None and body.is_verified != user.is_verified:
+        changes["is_verified"] = {"from": user.is_verified, "to": body.is_verified}
         user.is_verified = body.is_verified
-        # Mirror is_verified onto the Doctor profile if applicable
         if user.role == "doctor":
             doc = (
                 await db.execute(select(Doctor).where(Doctor.user_id == user_id))
             ).scalar_one_or_none()
             if doc:
                 doc.is_verified = body.is_verified
-    if body.role is not None:
+    if body.role is not None and body.role != user.role:
+        changes["role"] = {"from": user.role, "to": body.role}
         user.role = body.role
+
+    if changes:
+        action = _infer_action(changes)
+        await log_action(
+            db,
+            actor=current_admin,
+            action=action,
+            target_type="user",
+            target_id=user_id,
+            meta={"changes": changes, "target_email": user.email},
+        )
 
     await db.commit()
     await db.refresh(user)
 
-    # Re-use get_user logic
     return await get_user(user_id, current_admin, db)
 
 
@@ -484,7 +513,7 @@ async def list_diagnoses(
 @router.post("/diagnoses/{diagnosis_id}/requeue", status_code=status.HTTP_202_ACCEPTED)
 async def requeue_diagnosis(
     diagnosis_id: uuid.UUID,
-    _: User = Depends(_require_admin),
+    current_admin: User = Depends(_require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     dx = (
@@ -498,7 +527,16 @@ async def requeue_diagnosis(
             f"Cannot requeue a diagnosis with status '{dx.status}'",
         )
 
+    previous_status = dx.status
     dx.status = "pending"
+    await log_action(
+        db,
+        actor=current_admin,
+        action="diagnosis.requeued",
+        target_type="diagnosis",
+        target_id=diagnosis_id,
+        meta={"previous_status": previous_status},
+    )
     await db.commit()
     process_diagnosis.delay(str(dx.id))
     return {"queued": True, "diagnosis_id": str(diagnosis_id)}
@@ -560,4 +598,49 @@ async def queue_health(_: User = Depends(_require_admin)):
         reserved_tasks=total_reserved,
         total_tasks_in_queue=total_active + total_reserved + total_scheduled,
         pending_in_broker=pending_in_broker,
+    )
+
+
+# ── audit log ─────────────────────────────────────────────────────────────────
+
+
+@router.get("/audit-logs", response_model=AuditLogList)
+async def list_audit_logs(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    action: str | None = Query(default=None),
+    actor_id: uuid.UUID | None = Query(default=None),
+    target_type: str | None = Query(default=None),
+    target_id: str | None = Query(default=None),
+    _: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    q = select(AuditLog)
+    if action:
+        q = q.where(AuditLog.action == action)
+    if actor_id:
+        q = q.where(AuditLog.actor_id == actor_id)
+    if target_type:
+        q = q.where(AuditLog.target_type == target_type)
+    if target_id:
+        q = q.where(AuditLog.target_id == target_id)
+
+    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
+    entries = (
+        (
+            await db.execute(
+                q.order_by(AuditLog.created_at.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return AuditLogList(
+        entries=[AuditLogItem.model_validate(e) for e in entries],
+        total=total,
+        page=page,
+        page_size=page_size,
     )
