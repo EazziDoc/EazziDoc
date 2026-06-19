@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     REPORT_EMAIL_BCC: str = ""  # BCC address for all diagnosis-ready emails
     FRONTEND_URL: str = "http://localhost:3000"
 
+    # Rate limiting
+    RATELIMIT_ENABLED: bool = True
+
     # Monitoring
     SENTRY_DSN: str = ""
 

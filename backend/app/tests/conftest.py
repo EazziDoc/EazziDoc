@@ -5,6 +5,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.database import Base, get_db
+from app.core.limiter import limiter
 from app.main import app
 
 TEST_DATABASE_URL = "postgresql+asyncpg://test:test@localhost/eazzidoc_test"
@@ -34,6 +35,15 @@ def create_tables():
     asyncio.run(_setup())
     yield
     asyncio.run(_teardown())
+
+
+@pytest.fixture(autouse=True)
+def _disable_rate_limits():
+    """Disable rate limiting for all tests to prevent shared in-memory counter exhaustion."""
+    original = limiter.enabled
+    limiter.enabled = False
+    yield
+    limiter.enabled = original
 
 
 @pytest.fixture
