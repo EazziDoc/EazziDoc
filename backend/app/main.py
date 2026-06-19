@@ -1,14 +1,16 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.database import get_db
 from app.core.limiter import limiter
 from app.core.logging import configure_logging
 from app.middleware.request_logging import RequestIDMiddleware, RequestLoggingMiddleware
@@ -83,13 +85,10 @@ def create_app() -> FastAPI:
     ).instrument(application).expose(application, include_in_schema=False)
 
     @application.get("/health", tags=["health"])
-    async def health():
-        from app.core.database import AsyncSessionLocal
-
+    async def health(db: AsyncSession = Depends(get_db)):
         db_status = "ok"
         try:
-            async with AsyncSessionLocal() as session:
-                await session.execute(text("SELECT 1"))
+            await db.execute(text("SELECT 1"))
         except Exception:
             db_status = "error"
 
