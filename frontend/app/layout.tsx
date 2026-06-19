@@ -7,6 +7,9 @@ export const metadata: Metadata = {
   title: "EazziDoc — AI Medical Imaging",
   description:
     "AI-powered medical imaging diagnostics for underserved communities across Africa.",
+  icons: {
+    icon: "/icon.png",
+  },
 };
 
 export default function RootLayout({

@@ -12,6 +12,7 @@ import {
   UserCheck,
   Users,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
@@ -61,11 +62,8 @@ export function Sidebar() {
   return (
     <aside className="flex h-screen w-60 flex-col border-r border-gray-200 bg-white">
       {/* Logo */}
-      <div className="flex h-16 items-center gap-2 border-b border-gray-100 px-6">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 text-white text-sm font-bold">
-          E
-        </div>
-        <span className="font-semibold text-gray-900">EazziDoc</span>
+      <div className="flex h-16 items-center border-b border-gray-100 px-4">
+        <Image src="/logo.png" alt="EazziDoc" width={120} height={40} className="object-contain" />
       </div>
 
       {/* Nav */}

@@ -3,15 +3,15 @@ FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
-# System libs needed at build time
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+ARG EXTRAS=prod-no-ml
 COPY pyproject.toml .
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -e ".[prod]" --target /deps
+    && pip install --no-cache-dir -e ".[$EXTRAS]"
 
 
 # ── Stage 2: production image ─────────────────────────────────────────────────
@@ -28,8 +28,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy installed packages from builder
-COPY --from=builder /deps /usr/local/lib/python3.11/site-packages
+# Copy installed packages AND console scripts (alembic, celery, uvicorn, etc.)
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application code
 COPY app/ ./app/
