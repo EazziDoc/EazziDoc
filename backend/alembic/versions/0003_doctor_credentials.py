@@ -9,6 +9,7 @@ Create Date: 2026-06-22
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+from sqlalchemy import text
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
@@ -22,7 +23,9 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.add_column(
         "doctors",
-        sa.Column("qualifications", postgresql.JSONB(), nullable=False, server_default="'[]'"),
+        sa.Column(
+            "qualifications", postgresql.JSONB(), nullable=False, server_default=text("'[]'")
+        ),
     )
     op.add_column(
         "doctors",
@@ -30,7 +33,9 @@ def upgrade() -> None:
     )
     op.add_column(
         "doctors",
-        sa.Column("certification_keys", postgresql.JSONB(), nullable=False, server_default="'[]'"),
+        sa.Column(
+            "certification_keys", postgresql.JSONB(), nullable=False, server_default=text("'[]'")
+        ),
     )
     op.add_column(
         "doctors",
@@ -38,7 +43,7 @@ def upgrade() -> None:
             "registration_status",
             sa.String(20),
             nullable=False,
-            server_default="'pending_review'",
+            server_default=text("'pending_review'"),
         ),
     )
     op.add_column(
