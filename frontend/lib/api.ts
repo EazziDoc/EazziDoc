@@ -343,6 +343,44 @@ export interface QueueHealth {
   pending_in_broker: number;
 }
 
+export interface AdminDiagnosisDetail {
+  id: string;
+  patient_id: string;
+  patient_name: string | null;
+  patient_email: string | null;
+  modality: string | null;
+  status: string;
+  model_used: string | null;
+  confidence_score: number | null;
+  urgency: string | null;
+  image_keys: string[];
+  report: {
+    summary?: string;
+    findings?: string[];
+    impression?: string;
+    differential_diagnoses?: string[];
+    recommendations?: string[];
+    urgency?: string;
+    patient_notes?: string;
+    error?: string;
+  } | null;
+  doctor_notes: string | null;
+  created_at: string;
+  updated_at: string;
+  doctor_reviewed_at: string | null;
+}
+
+export interface AuditLogItem {
+  id: string;
+  actor_id: string;
+  actor_email: string;
+  action: string;
+  target_type: string;
+  target_id: string;
+  meta: Record<string, unknown> | null;
+  created_at: string;
+}
+
 export async function adminGetOverview() {
   return req<OverviewStats>("/admin/stats/overview");
 }
@@ -402,6 +440,21 @@ export async function adminRequeueDiagnosis(id: string) {
 
 export async function adminGetQueueHealth() {
   return req<QueueHealth>("/admin/queue/health");
+}
+
+export async function adminGetDiagnosis(id: string) {
+  return req<AdminDiagnosisDetail>(`/admin/diagnoses/${id}`);
+}
+
+export async function adminGetAuditLogs(params?: { page?: number; page_size?: number; action?: string }) {
+  const q = new URLSearchParams();
+  if (params?.page) q.set("page", String(params.page));
+  if (params?.page_size) q.set("page_size", String(params.page_size));
+  if (params?.action) q.set("action", params.action);
+  const qs = q.toString();
+  return req<{ entries: AuditLogItem[]; total: number; page: number; page_size: number }>(
+    `/admin/audit-logs${qs ? `?${qs}` : ""}`,
+  );
 }
 
 // ── doctor: linked patients ───────────────────────────────────────────────────
