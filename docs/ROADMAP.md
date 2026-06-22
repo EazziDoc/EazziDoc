@@ -264,6 +264,47 @@ Reusable `ConfirmDialog` component (`components/ui/confirm-dialog.tsx`) using na
 
 ---
 
+## Phase 3e — Admin Registration 🔄
+
+Invite-code-gated admin account creation, replacing the manual SQL promotion workflow.
+
+**Branch:** `feature/admin-registration`
+
+### How it works
+
+1. Admin navigates to `/admin/register` (linked from the admin login page)
+2. Fills in name, email, password, and a secret **invite code**
+3. Backend validates the code against `ADMIN_INVITE_CODE` env var
+4. On success, account is created with `role=admin`, `is_verified=True`, and the user is redirected to `/admin/login` with a success banner
+
+### Security model
+
+- If `ADMIN_INVITE_CODE` is empty or unset, the endpoint returns `403` — registration is fully disabled
+- The invite code is never stored in the database; it only lives in the environment
+- Rotate the code any time by updating the env var (existing admin accounts are unaffected)
+- Wrong code returns the same `403` error as a disabled feature (no information leak about whether feature is on)
+
+### Environment
+
+| Variable | Required | Description |
+|---|---|---|
+| `ADMIN_INVITE_CODE` | Yes (for registration) | Secret passphrase; leave empty to disable endpoint |
+
+**Local:** set in `backend/.env`
+**Production (Fly.io):** `fly secrets set ADMIN_INVITE_CODE=your-secret`
+
+### Backend
+
+- `POST /auth/admin/register` — new endpoint in `app/api/v1/auth.py`
+- `AdminRegisterRequest` schema in `app/schemas/auth.py` (same password strength rules as regular registration)
+
+### Frontend
+
+- `/admin/register` — dark-themed form matching the admin portal aesthetic; invite code field styled as password input
+- `/admin/login` — green success banner on redirect from registration; "Register with invite code" link in footer
+
+---
+
 ## Phase 4 — Specialist ML Models 🔮
 
 Replace Gemini with fine-tuned open-source models per modality. Hosted on Fly.io GPU workers or Hugging Face Inference Endpoints.

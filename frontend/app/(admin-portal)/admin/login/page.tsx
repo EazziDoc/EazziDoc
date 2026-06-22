@@ -1,19 +1,22 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 import { login } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
-import { Input, PasswordInput } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/input";
 
-export default function AdminLoginPage() {
+function AdminLoginForm() {
   const router = useRouter();
+  const params = useSearchParams();
   const { login: authLogin } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const registered = params.get("registered") === "1";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -40,6 +43,13 @@ export default function AdminLoginPage() {
       <p className="text-sm text-gray-400 mb-6">
         Restricted access — authorised personnel only.
       </p>
+
+      {registered && (
+        <p className="text-sm text-green-400 bg-green-950/50 border border-green-800/50 rounded-lg px-3 py-2 mb-4">
+          Account created successfully. You can now sign in.
+        </p>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="flex flex-col gap-1">
           <label className="text-sm font-medium text-gray-300">Email address</label>
@@ -73,6 +83,21 @@ export default function AdminLoginPage() {
           Sign in
         </Button>
       </form>
+
+      <p className="mt-5 text-center text-sm text-gray-500">
+        Need an account?{" "}
+        <Link href="/admin/register" className="text-gray-300 hover:text-white underline">
+          Register with invite code
+        </Link>
+      </p>
     </>
+  );
+}
+
+export default function AdminLoginPage() {
+  return (
+    <Suspense>
+      <AdminLoginForm />
+    </Suspense>
   );
 }
