@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -22,12 +22,19 @@ class Doctor(Base):
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     is_available: Mapped[bool] = mapped_column(Boolean, default=True)
     # Credentials submitted at registration
-    qualifications: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="'[]'")
+    qualifications: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'")
+    )
     other_qualifications: Mapped[str | None] = mapped_column(Text, nullable=True)
-    certification_keys: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="'[]'")
+    certification_keys: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'")
+    )
     # Admin review workflow
     registration_status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="pending_review", server_default="'pending_review'"
+        String(20),
+        nullable=False,
+        default="pending_review",
+        server_default=text("'pending_review'"),
     )
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
