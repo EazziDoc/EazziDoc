@@ -6,6 +6,8 @@ export interface User {
   role: Role;
   is_verified: boolean;
   is_active: boolean;
+  first_name: string | null;
+  last_name: string | null;
 }
 
 export interface PatientProfile {
