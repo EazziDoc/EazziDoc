@@ -69,7 +69,18 @@ async def register(request: Request, body: RegisterRequest, db: AsyncSession = D
     if body.role == "patient":
         db.add(Patient(user_id=user.id, first_name=body.first_name, last_name=body.last_name))
     else:
-        db.add(Doctor(user_id=user.id, first_name=body.first_name, last_name=body.last_name))
+        db.add(
+            Doctor(
+                user_id=user.id,
+                first_name=body.first_name,
+                last_name=body.last_name,
+                specialty=body.specialty,
+                license_number=body.license_number,
+                qualifications=body.qualifications,
+                other_qualifications=body.other_qualifications,
+                registration_status="pending_review",
+            )
+        )
 
     await db.commit()
     registrations_total.labels(role=body.role).inc()

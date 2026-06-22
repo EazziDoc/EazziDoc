@@ -134,6 +134,7 @@ export default function AdminOverviewPage() {
         <div className="flex flex-wrap gap-3">
           {[
             { href: "/admin/users", label: "Manage users" },
+            { href: "/admin/doctors?status=pending_review", label: "Pending registrations" },
             { href: "/admin/diagnoses", label: "Browse diagnoses" },
             { href: "/admin/queue", label: "Queue health" },
             { href: "/admin/audit-logs", label: "Audit logs" },

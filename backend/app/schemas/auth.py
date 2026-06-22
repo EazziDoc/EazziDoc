@@ -10,6 +10,11 @@ class RegisterRequest(BaseModel):
     role: Literal["patient", "doctor"] = "patient"
     first_name: str = Field(min_length=1, max_length=100)
     last_name: str = Field(min_length=1, max_length=100)
+    # Doctor-only fields (ignored for patients)
+    specialty: str | None = Field(default=None, max_length=100)
+    license_number: str | None = Field(default=None, max_length=100)
+    qualifications: list[str] = Field(default_factory=list)
+    other_qualifications: str | None = Field(default=None, max_length=500)
 
     @field_validator("password")
     @classmethod

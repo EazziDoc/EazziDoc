@@ -15,6 +15,11 @@ ALLOWED_CONTENT_TYPES: dict[str, str] = {
     "image/tiff": "tiff",
     "application/dicom": "dcm",
 }
+ALLOWED_CERT_TYPES: dict[str, str] = {
+    "application/pdf": "pdf",
+    "image/jpeg": "jpg",
+    "image/png": "png",
+}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="r2")
@@ -88,6 +93,11 @@ class StorageService:
         """Generate a deterministic, collision-free object key for an image."""
         ext = ALLOWED_CONTENT_TYPES[content_type]
         return f"images/{user_id}/{uuid.uuid4()}.{ext}"
+
+    def make_cert_key(self, user_id: str, content_type: str) -> str:
+        """Generate an object key for a doctor certification document."""
+        ext = ALLOWED_CERT_TYPES[content_type]
+        return f"certifications/{user_id}/{uuid.uuid4()}.{ext}"
 
 
 StorageError = (BotoCoreError, ClientError)
