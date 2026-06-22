@@ -1,6 +1,11 @@
+import { ThemeToggle } from "@/components/ui/theme-toggle";
+
 export default function AdminPortalLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-950 dark:bg-gray-950 flex items-center justify-center p-4">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
           <div className="inline-flex items-center gap-2 mb-4">
