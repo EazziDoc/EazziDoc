@@ -111,6 +111,13 @@ class AdminUserDetail(BaseModel):
     specialty: str | None  # doctors only
     total_diagnoses: int  # patients only
     total_appointments: int
+    # identity verification (patients only)
+    identity_verification_status: str | None = None
+    id_type: str | None = None
+    id_number: str | None = None
+    id_rejection_reason: str | None = None
+    id_verified_at: datetime | None = None
+    id_document_url: str | None = None  # presigned R2 URL, 1 h TTL
 
     class Config:
         from_attributes = True

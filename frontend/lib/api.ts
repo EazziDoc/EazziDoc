@@ -317,7 +317,13 @@ export interface AdminUser {
   specialty?: string | null;
   total_diagnoses?: number;
   total_appointments?: number;
+  // identity verification (patients only)
   identity_verification_status?: string | null;
+  id_type?: string | null;
+  id_number?: string | null;
+  id_rejection_reason?: string | null;
+  id_verified_at?: string | null;
+  id_document_url?: string | null;
 }
 
 export interface AdminUserList {

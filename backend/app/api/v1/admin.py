@@ -364,6 +364,12 @@ async def get_user(
     specialty = None
     total_diagnoses = 0
     total_appointments = 0
+    identity_verification_status = None
+    id_type = None
+    id_number = None
+    id_rejection_reason = None
+    id_verified_at = None
+    id_document_url = None
 
     if user.role == "patient":
         pt = (
@@ -383,6 +389,18 @@ async def get_user(
                     .where(Appointment.patient_id == pt.id)
                 )
             ).scalar_one()
+            identity_verification_status = pt.identity_verification_status
+            id_type = pt.id_type
+            id_number = pt.id_number
+            id_rejection_reason = pt.id_rejection_reason
+            id_verified_at = pt.id_verified_at
+            if pt.id_document_key:
+                try:
+                    id_document_url = await storage_service.presigned_url(
+                        pt.id_document_key, expires_in=3600
+                    )
+                except Exception:
+                    pass
 
     elif user.role == "doctor":
         doc = (
@@ -410,6 +428,12 @@ async def get_user(
         specialty=specialty,
         total_diagnoses=total_diagnoses,
         total_appointments=total_appointments,
+        identity_verification_status=identity_verification_status,
+        id_type=id_type,
+        id_number=id_number,
+        id_rejection_reason=id_rejection_reason,
+        id_verified_at=id_verified_at,
+        id_document_url=id_document_url,
     )
 
 
