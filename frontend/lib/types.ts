@@ -20,6 +20,10 @@ export interface PatientProfile {
   phone: string | null;
   country: string | null;
   medical_history: Record<string, unknown>;
+  identity_verification_status: "unverified" | "pending_review" | "verified" | "rejected";
+  id_type: string | null;
+  id_rejection_reason: string | null;
+  id_verified_at: string | null;
 }
 
 export interface DoctorProfile {

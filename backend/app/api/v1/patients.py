@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -13,6 +13,7 @@ from app.models.user import User
 from app.schemas.patient import (
     DoctorProfileResponse,
     DoctorProfileUpdate,
+    PatientIdentitySubmit,
     PatientProfileResponse,
     PatientProfileUpdate,
 )
@@ -191,6 +192,55 @@ async def delete_my_doctor_account(
     """Soft-delete the doctor's own account. Diagnosis history is preserved."""
     current_user.is_active = False
     await db.commit()
+
+
+@router.post("/patients/me/identity", status_code=status.HTTP_200_OK)
+async def submit_identity_document(
+    id_type: str = Form(...),
+    id_number: str = Form(...),
+    file: UploadFile = File(...),
+    current_user: User = Depends(require_role("patient")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Submit or resubmit a government-issued ID for identity verification."""
+    PatientIdentitySubmit(id_type=id_type, id_number=id_number)
+
+    if file.content_type not in ALLOWED_CERT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only PDF, JPEG, or PNG files are accepted",
+        )
+    data = await file.read()
+    if len(data) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File exceeds the 10 MB size limit",
+        )
+
+    result = await db.execute(select(Patient).where(Patient.user_id == current_user.id))
+    patient = result.scalar_one_or_none()
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Patient profile not found"
+        )
+
+    key = storage_service.make_identity_key(str(current_user.id), file.content_type)
+    await storage_service.upload(data, key, file.content_type)
+
+    if patient.id_document_key:
+        try:
+            await storage_service.delete(patient.id_document_key)
+        except Exception:
+            logger.warning("Could not delete old identity document %s", patient.id_document_key)
+
+    patient.id_type = id_type
+    patient.id_number = id_number
+    patient.id_document_key = key
+    patient.identity_verification_status = "pending_review"
+    patient.id_rejection_reason = None
+    await db.commit()
+
+    return {"status": "pending_review"}
 
 
 @router.patch("/doctors/me/availability", response_model=DoctorProfileResponse)

@@ -54,8 +54,8 @@ export default function AdminRegisterPage() {
 
   return (
     <>
-      <h2 className="text-lg font-semibold text-white mb-1">Create Admin Account</h2>
-      <p className="text-sm text-gray-400 mb-6">
+      <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Create Admin Account</h2>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
         An invite code is required. Contact an existing administrator to obtain one.
       </p>
 
@@ -102,7 +102,7 @@ export default function AdminRegisterPage() {
             required
             autoComplete="new-password"
             placeholder="Min. 8 chars, 1 uppercase, 1 number"
-            className="border-gray-700 bg-gray-800 text-white placeholder:text-gray-500 focus:border-primary-500 focus:ring-primary-500/20"
+            className="border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:border-primary-500 focus:ring-primary-500/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500"
           />
         </Field>
 
@@ -113,11 +113,11 @@ export default function AdminRegisterPage() {
             required
             autoComplete="new-password"
             placeholder="Repeat password"
-            className="border-gray-700 bg-gray-800 text-white placeholder:text-gray-500 focus:border-primary-500 focus:ring-primary-500/20"
+            className="border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:border-primary-500 focus:ring-primary-500/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500"
           />
         </Field>
 
-        <div className="border-t border-gray-800 pt-4">
+        <div className="border-t border-gray-200 dark:border-gray-800 pt-4">
           <Field label="Invite code">
             <input
               type="password"
@@ -132,7 +132,7 @@ export default function AdminRegisterPage() {
         </div>
 
         {error && (
-          <p className="text-sm text-red-400 bg-red-950/50 border border-red-800/50 rounded-lg px-3 py-2">
+          <p className="text-sm text-red-600 bg-red-50 border border-red-200 dark:text-red-400 dark:bg-red-950/50 dark:border-red-800/50 rounded-lg px-3 py-2">
             {error}
           </p>
         )}
@@ -144,7 +144,7 @@ export default function AdminRegisterPage() {
 
       <p className="mt-5 text-center text-sm text-gray-500">
         Already have an account?{" "}
-        <Link href="/admin/login" className="text-gray-300 hover:text-white underline">
+        <Link href="/admin/login" className="text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white underline">
           Sign in
         </Link>
       </p>
@@ -155,11 +155,11 @@ export default function AdminRegisterPage() {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-sm font-medium text-gray-300">{label}</label>
+      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</label>
       {children}
     </div>
   );
 }
 
 const inputCls =
-  "h-10 w-full rounded-lg border border-gray-700 bg-gray-800 px-3 text-sm text-white placeholder:text-gray-500 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20";
+  "h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500";
