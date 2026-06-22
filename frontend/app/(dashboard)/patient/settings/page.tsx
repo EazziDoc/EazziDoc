@@ -2,15 +2,19 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
-import { getPatientProfile, updatePatientProfile } from "@/lib/api";
+import { useRouter } from "next/navigation";
+import { deleteMyAccount, getPatientProfile, updatePatientProfile } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
-
-const GENDERS = ["", "male", "female", "non_binary", "prefer_not_to_say"];
 
 export default function PatientSettingsPage() {
   const qc = useQueryClient();
+  const router = useRouter();
+  const { logout } = useAuth();
+
   const { data: profile, isLoading } = useQuery({
     queryKey: ["patient-profile"],
     queryFn: getPatientProfile,
@@ -26,6 +30,9 @@ export default function PatientSettingsPage() {
   });
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -70,6 +77,19 @@ export default function PatientSettingsPage() {
       });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Update failed");
+    }
+  }
+
+  async function handleDeleteAccount() {
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await deleteMyAccount();
+      await logout();
+      router.push("/login");
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : "Delete failed. Please try again.");
+      setDeleting(false);
     }
   }
 
@@ -162,6 +182,40 @@ export default function PatientSettingsPage() {
           </Button>
         </form>
       </Card>
+
+      {/* Danger zone */}
+      <Card className="border-red-200">
+        <CardHeader>
+          <CardTitle className="text-red-700">Danger zone</CardTitle>
+        </CardHeader>
+        <div className="space-y-3">
+          <p className="text-sm text-gray-500">
+            Deleting your account will deactivate your access. Your diagnosis history will be
+            retained for medical record purposes but you will no longer be able to log in.
+          </p>
+          {deleteError && (
+            <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{deleteError}</p>
+          )}
+          <Button
+            variant="destructive"
+            size="sm"
+            loading={deleting}
+            onClick={() => setConfirmDelete(true)}
+          >
+            Delete my account
+          </Button>
+        </div>
+      </Card>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete your account?"
+        description="Your access will be removed immediately. Your medical diagnosis history will be kept for record purposes. This cannot be undone."
+        confirmLabel="Yes, delete my account"
+        destructive
+        onConfirm={handleDeleteAccount}
+        onCancel={() => setConfirmDelete(false)}
+      />
     </div>
   );
 }

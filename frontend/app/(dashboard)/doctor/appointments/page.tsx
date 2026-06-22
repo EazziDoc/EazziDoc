@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import {
   completeAppointment,
   confirmAppointment,
@@ -10,6 +11,7 @@ import {
 import type { Appointment } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatDateTime, statusColor } from "@/lib/utils";
 
 function ActionButton({
@@ -36,6 +38,7 @@ function ActionButton({
 
 function AppointmentRow({ a }: { a: Appointment }) {
   const qc = useQueryClient();
+  const [confirmCancel, setConfirmCancel] = useState(false);
 
   function invalidate() {
     qc.invalidateQueries({ queryKey: ["doctor-appointments"] });
@@ -44,6 +47,8 @@ function AppointmentRow({ a }: { a: Appointment }) {
   const { mutate: confirm } = useMutation({ mutationFn: confirmAppointment, onSuccess: invalidate });
   const { mutate: complete } = useMutation({ mutationFn: completeAppointment, onSuccess: invalidate });
   const { mutate: cancel } = useMutation({ mutationFn: doctorCancelAppointment, onSuccess: invalidate });
+
+  const canCancel = a.status === "booked" || a.status === "confirmed";
 
   return (
     <div className="flex items-start justify-between rounded-xl border border-gray-200 bg-white p-4">
@@ -57,19 +62,26 @@ function AppointmentRow({ a }: { a: Appointment }) {
         <Badge className={statusColor(a.status)}>{a.status}</Badge>
         <div className="flex gap-2">
           {a.status === "booked" && (
-            <>
-              <ActionButton label="Confirm" onClick={() => confirm(a.id)} variant="primary" />
-              <ActionButton label="Cancel" onClick={() => cancel(a.id)} variant="danger" />
-            </>
+            <ActionButton label="Confirm" onClick={() => confirm(a.id)} variant="primary" />
           )}
           {a.status === "confirmed" && (
-            <>
-              <ActionButton label="Mark complete" onClick={() => complete(a.id)} variant="primary" />
-              <ActionButton label="Cancel" onClick={() => cancel(a.id)} variant="danger" />
-            </>
+            <ActionButton label="Mark complete" onClick={() => complete(a.id)} variant="primary" />
+          )}
+          {canCancel && (
+            <ActionButton label="Cancel" onClick={() => setConfirmCancel(true)} variant="danger" />
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmCancel}
+        title="Cancel appointment?"
+        description="This will cancel the appointment for you and the patient. The action cannot be undone."
+        confirmLabel="Yes, cancel"
+        destructive
+        onConfirm={() => { setConfirmCancel(false); cancel(a.id); }}
+        onCancel={() => setConfirmCancel(false)}
+      />
     </div>
   );
 }
@@ -124,7 +136,7 @@ export default function DoctorAppointmentsPage() {
 
           {groups.cancelled.length > 0 && (
             <section className="space-y-3">
-              <h2 className="text-base font-semibold text-gray-800 text-gray-400">
+              <h2 className="text-base font-semibold text-gray-400">
                 Cancelled ({groups.cancelled.length})
               </h2>
               {groups.cancelled.map((a) => (

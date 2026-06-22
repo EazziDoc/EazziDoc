@@ -541,3 +541,24 @@ export async function adminRejectDoctor(id: string, reason: string) {
     body: JSON.stringify({ reason }),
   });
 }
+
+export async function adminBanUser(id: string) {
+  return req<{ id: string; is_active: boolean }>(`/admin/users/${id}/ban`, { method: "POST" });
+}
+
+export async function adminUnbanUser(id: string) {
+  return req<{ id: string; is_active: boolean }>(`/admin/users/${id}/unban`, { method: "POST" });
+}
+
+export async function adminDeleteUser(id: string) {
+  return req<void>(`/admin/users/${id}`, { method: "DELETE" });
+}
+
+export async function deleteMyAccount() {
+  // role-specific endpoint is called by the auth context based on role
+  return req<void>(`/patients/me`, { method: "DELETE" });
+}
+
+export async function deleteMyDoctorAccount() {
+  return req<void>(`/doctors/me`, { method: "DELETE" });
+}
