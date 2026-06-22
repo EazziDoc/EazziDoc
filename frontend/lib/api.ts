@@ -562,3 +562,16 @@ export async function deleteMyAccount() {
 export async function deleteMyDoctorAccount() {
   return req<void>(`/doctors/me`, { method: "DELETE" });
 }
+
+export async function registerAdmin(data: {
+  email: string;
+  password: string;
+  first_name: string;
+  last_name: string;
+  invite_code: string;
+}) {
+  return req<{ user_id: string; email: string; role: string }>(`/auth/admin/register`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}

@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    ADMIN_INVITE_CODE: str = (
+        ""  # Required to register a new admin account; empty = feature disabled
+    )
 
     # Storage
     CLOUDFLARE_R2_ACCOUNT_ID: str = ""
