@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useRef, useState } from "react";
 import {
+  adminGetIdentityDocumentUrl,
   adminGetUser,
   adminRejectPatientIdentity,
   adminUpdateUser,
@@ -61,7 +62,18 @@ export default function AdminUserDetailPage() {
   const [confirmVerify, setConfirmVerify] = useState(false);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const [docFetching, setDocFetching] = useState(false);
   const rejectDialogRef = useRef<HTMLDialogElement>(null);
+
+  async function openIdentityDocument() {
+    setDocFetching(true);
+    try {
+      const { url } = await adminGetIdentityDocumentUrl(id);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } finally {
+      setDocFetching(false);
+    }
+  }
 
   const { data: user, isLoading } = useQuery({
     queryKey: ["admin-user", id],
@@ -218,18 +230,17 @@ export default function AdminUserDetailPage() {
                 <dd className="mt-1 text-red-600">{user.id_rejection_reason}</dd>
               </div>
             )}
-            {user.id_document_url && (
+            {(user.id_type || user.id_number) && (
               <div className="col-span-2">
                 <dt className="text-gray-500">Document</dt>
                 <dd className="mt-1">
-                  <a
-                    href={user.id_document_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary-600 hover:underline text-sm"
+                  <button
+                    onClick={openIdentityDocument}
+                    disabled={docFetching}
+                    className="text-primary-600 hover:underline text-sm disabled:opacity-50"
                   >
-                    View / download document ↗
-                  </a>
+                    {docFetching ? "Opening…" : "View / download document ↗"}
+                  </button>
                 </dd>
               </div>
             )}

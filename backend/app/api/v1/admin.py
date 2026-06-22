@@ -369,7 +369,6 @@ async def get_user(
     id_number = None
     id_rejection_reason = None
     id_verified_at = None
-    id_document_url = None
 
     if user.role == "patient":
         pt = (
@@ -394,13 +393,7 @@ async def get_user(
             id_number = pt.id_number
             id_rejection_reason = pt.id_rejection_reason
             id_verified_at = pt.id_verified_at
-            if pt.id_document_key:
-                try:
-                    id_document_url = await storage_service.presigned_url(
-                        pt.id_document_key, expires_in=3600
-                    )
-                except Exception:
-                    pass
+            # id_document_url is generated on demand via GET /admin/users/{id}/identity-document
 
     elif user.role == "doctor":
         doc = (
@@ -433,7 +426,6 @@ async def get_user(
         id_number=id_number,
         id_rejection_reason=id_rejection_reason,
         id_verified_at=id_verified_at,
-        id_document_url=id_document_url,
     )
 
 
@@ -1058,3 +1050,20 @@ async def reject_patient_identity(
     admin_actions_total.labels(action="patient.identity_rejected").inc()
     await db.commit()
     return {"rejected": True, "user_id": str(user_id)}
+
+
+@router.get("/users/{user_id}/identity-document", status_code=status.HTTP_200_OK)
+async def get_patient_identity_document_url(
+    user_id: uuid.UUID,
+    current_admin: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a fresh presigned URL for the patient's submitted identity document."""
+    patient = (
+        await db.execute(select(Patient).where(Patient.user_id == user_id))
+    ).scalar_one_or_none()
+    if not patient or not patient.id_document_key:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No identity document on file")
+
+    url = await storage_service.presigned_url(patient.id_document_key, expires_in=3600)
+    return {"url": url}

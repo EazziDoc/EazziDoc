@@ -323,7 +323,6 @@ export interface AdminUser {
   id_number?: string | null;
   id_rejection_reason?: string | null;
   id_verified_at?: string | null;
-  id_document_url?: string | null;
 }
 
 export interface AdminUserList {
@@ -607,4 +606,8 @@ export async function adminRejectPatientIdentity(userId: string, reason: string)
     `/admin/users/${userId}/reject-identity`,
     { method: "POST", body: JSON.stringify({ reason }) }
   );
+}
+
+export async function adminGetIdentityDocumentUrl(userId: string) {
+  return req<{ url: string }>(`/admin/users/${userId}/identity-document`);
 }
