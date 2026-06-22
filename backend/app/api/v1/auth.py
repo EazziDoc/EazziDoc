@@ -138,6 +138,18 @@ async def register_admin(
     registrations_total.labels(role="admin").inc()
 
     logger.info("New admin account created: %s", body.email)
+
+    try:
+        asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: email_svc.send_admin_welcome(
+                email=body.email,
+                name=body.first_name,
+            ),
+        )
+    except Exception:
+        logger.exception("Admin welcome email failed for %s", body.email)
+
     return RegisterResponse(user_id=str(user.id), email=user.email, role=user.role)
 
 
