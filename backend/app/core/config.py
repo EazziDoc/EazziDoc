@@ -51,13 +51,10 @@ class Settings(BaseSettings):
     # AI — Vision
     HUGGINGFACE_API_KEY: str = ""
 
-    # Email / SMTP
-    SMTP_HOST: str = ""
-    SMTP_PORT: int = 465
-    SMTP_USER: str = ""
-    SMTP_PASSWORD: str = ""
-    SMTP_FROM: str = ""
-    REPORT_EMAIL_BCC: str = ""  # BCC address for all diagnosis-ready emails
+    # Email — Resend
+    RESEND_API_KEY: str = ""
+    SMTP_FROM: str = "EazziDoc <onboarding@resend.dev>"
+    REPORT_EMAIL_BCC: str = ""
     FRONTEND_URL: str = "http://localhost:3000"
 
     # Rate limiting
