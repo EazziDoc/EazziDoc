@@ -1,9 +1,10 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { deleteMyAccount, getPatientProfile, updatePatientProfile } from "@/lib/api";
+import { CheckCircle, Clock, AlertCircle } from "lucide-react";
+import { deleteMyAccount, getPatientProfile, submitPatientIdentity, updatePatientProfile } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,6 +34,15 @@ export default function PatientSettingsPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [deleting, setDeleting] = useState(false);
+
+  // Identity verification state
+  const [idType, setIdType] = useState("national_id");
+  const [idNumber, setIdNumber] = useState("");
+  const [idFile, setIdFile] = useState<File | null>(null);
+  const [idSubmitting, setIdSubmitting] = useState(false);
+  const [idError, setIdError] = useState("");
+  const [idSuccess, setIdSuccess] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (profile) {
@@ -77,6 +87,25 @@ export default function PatientSettingsPage() {
       });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Update failed");
+    }
+  }
+
+  async function handleIdentitySubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!idFile) { setIdError("Please select a document file."); return; }
+    setIdError("");
+    setIdSubmitting(true);
+    try {
+      await submitPatientIdentity(idType, idNumber, idFile);
+      qc.invalidateQueries({ queryKey: ["patient-profile"] });
+      setIdSuccess(true);
+      setIdNumber("");
+      setIdFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch (err: unknown) {
+      setIdError(err instanceof Error ? err.message : "Submission failed. Please try again.");
+    } finally {
+      setIdSubmitting(false);
     }
   }
 
@@ -182,6 +211,96 @@ export default function PatientSettingsPage() {
           </Button>
         </form>
       </Card>
+
+      {/* Identity verification */}
+      <div id="identity-verification">
+      <Card>
+        <CardHeader>
+          <CardTitle>Identity verification</CardTitle>
+        </CardHeader>
+
+        {profile?.identity_verification_status === "verified" && (
+          <div className="flex items-center gap-2 text-green-700 bg-green-50 rounded-lg px-3 py-2 text-sm">
+            <CheckCircle className="h-4 w-4 shrink-0" />
+            Identity verified
+            {profile.id_verified_at && (
+              <span className="text-green-600 ml-1">
+                — {new Date(profile.id_verified_at).toLocaleDateString()}
+              </span>
+            )}
+          </div>
+        )}
+
+        {profile?.identity_verification_status === "pending_review" && (
+          <div className="flex items-center gap-2 text-blue-700 bg-blue-50 rounded-lg px-3 py-2 text-sm">
+            <Clock className="h-4 w-4 shrink-0" />
+            Under review — we'll notify you once approved.
+          </div>
+        )}
+
+        {(profile?.identity_verification_status === "unverified" ||
+          profile?.identity_verification_status === "rejected") && (
+          <div className="space-y-4">
+            {profile.identity_verification_status === "rejected" && (
+              <div className="flex items-start gap-2 text-red-700 bg-red-50 rounded-lg px-3 py-2 text-sm">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-medium">Rejected:</span>{" "}
+                  {profile.id_rejection_reason ?? "See rejection notice above."}
+                </div>
+              </div>
+            )}
+            <p className="text-sm text-gray-500">
+              Submit a government-issued ID to verify your identity. Accepted: PDF, JPEG, PNG (max 10 MB).
+            </p>
+            <form onSubmit={handleIdentitySubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">ID type</label>
+                <select
+                  value={idType}
+                  onChange={(e) => setIdType(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                >
+                  <option value="national_id">National ID</option>
+                  <option value="passport">Passport</option>
+                  <option value="drivers_license">Driver&apos;s licence</option>
+                </select>
+              </div>
+              <Input
+                id="id_number"
+                label="ID number"
+                placeholder="e.g. GHA-123456789-0"
+                value={idNumber}
+                onChange={(e) => setIdNumber(e.target.value)}
+                required
+              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Document scan / photo</label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  required
+                  onChange={(e) => setIdFile(e.target.files?.[0] ?? null)}
+                  className="w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-primary-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary-700 hover:file:bg-primary-100"
+                />
+              </div>
+              {idError && (
+                <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{idError}</p>
+              )}
+              {idSuccess && (
+                <p className="text-sm text-green-700 bg-green-50 rounded-lg px-3 py-2">
+                  Submitted for review. You&apos;ll be notified once approved.
+                </p>
+              )}
+              <Button type="submit" loading={idSubmitting}>
+                Submit for verification
+              </Button>
+            </form>
+          </div>
+        )}
+      </Card>
+      </div>
 
       {/* Danger zone */}
       <Card className="border-red-200">

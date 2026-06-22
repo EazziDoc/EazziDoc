@@ -317,6 +317,7 @@ export interface AdminUser {
   specialty?: string | null;
   total_diagnoses?: number;
   total_appointments?: number;
+  identity_verification_status?: string | null;
 }
 
 export interface AdminUserList {
@@ -574,4 +575,30 @@ export async function registerAdmin(data: {
     method: "POST",
     body: JSON.stringify(data),
   });
+}
+
+// ── patient: identity verification ───────────────────────────────────────────
+
+export async function submitPatientIdentity(idType: string, idNumber: string, file: File) {
+  const form = new FormData();
+  form.append("id_type", idType);
+  form.append("id_number", idNumber);
+  form.append("file", file);
+  return req<{ status: string }>("/patients/me/identity", { method: "POST", body: form });
+}
+
+// ── admin: patient identity review ───────────────────────────────────────────
+
+export async function adminVerifyPatientIdentity(userId: string) {
+  return req<{ verified: boolean; user_id: string }>(
+    `/admin/users/${userId}/verify-identity`,
+    { method: "POST" }
+  );
+}
+
+export async function adminRejectPatientIdentity(userId: string, reason: string) {
+  return req<{ rejected: boolean; user_id: string }>(
+    `/admin/users/${userId}/reject-identity`,
+    { method: "POST", body: JSON.stringify({ reason }) }
+  );
 }

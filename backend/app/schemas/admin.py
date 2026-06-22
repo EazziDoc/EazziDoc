@@ -81,6 +81,7 @@ class AdminUserItem(BaseModel):
     is_active: bool
     created_at: datetime
     display_name: str | None  # first + last from profile
+    identity_verification_status: str | None = None
 
     class Config:
         from_attributes = True

@@ -43,6 +43,7 @@ from app.schemas.admin import (
     UrgencyCount,
     WorkerInfo,
 )
+from app.schemas.patient import PatientIdentityRejectRequest
 from app.services.audit import log_action
 from app.services.storage import storage_service
 from app.workers.tasks import process_diagnosis
@@ -313,6 +314,8 @@ async def list_users(
     patient_user_ids = [u.id for u in users if u.role == "patient"]
     doctor_user_ids = [u.id for u in users if u.role == "doctor"]
 
+    patient_identity_map: dict[uuid.UUID, str] = {}
+
     if patient_user_ids:
         pts = (
             (await db.execute(select(Patient).where(Patient.user_id.in_(patient_user_ids))))
@@ -320,6 +323,7 @@ async def list_users(
             .all()
         )
         patient_map = {p.user_id: f"{p.first_name} {p.last_name}" for p in pts}
+        patient_identity_map = {p.user_id: p.identity_verification_status for p in pts}
 
     if doctor_user_ids:
         docs = (
@@ -338,6 +342,7 @@ async def list_users(
             is_active=u.is_active,
             created_at=u.created_at,
             display_name=patient_map.get(u.id) or doctor_map.get(u.id),
+            identity_verification_status=patient_identity_map.get(u.id),
         )
         for u in users
     ]
@@ -941,3 +946,91 @@ async def reject_doctor(
     admin_actions_total.labels(action="doctor.registration_rejected").inc()
     await db.commit()
     return {"rejected": True, "doctor_id": str(doctor_id)}
+
+
+# ── Patient identity verification ─────────────────────────────────────────────
+
+
+@router.post("/users/{user_id}/verify-identity", status_code=status.HTTP_200_OK)
+async def verify_patient_identity(
+    user_id: uuid.UUID,
+    current_admin: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    if user.role != "patient":
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Identity verification is only for patients"
+        )
+
+    patient = (
+        await db.execute(select(Patient).where(Patient.user_id == user_id))
+    ).scalar_one_or_none()
+    if not patient:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Patient profile not found")
+    if patient.identity_verification_status != "pending_review":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Identity status is '{patient.identity_verification_status}', not pending_review",
+        )
+
+    patient.identity_verification_status = "verified"
+    patient.id_verified_at = _now()
+    patient.id_rejection_reason = None
+    user.is_verified = True
+
+    await log_action(
+        db,
+        actor=current_admin,
+        action="patient.identity_verified",
+        target_type="user",
+        target_id=user_id,
+        meta={"patient_email": user.email},
+    )
+    admin_actions_total.labels(action="patient.identity_verified").inc()
+    await db.commit()
+    return {"verified": True, "user_id": str(user_id)}
+
+
+@router.post("/users/{user_id}/reject-identity", status_code=status.HTTP_200_OK)
+async def reject_patient_identity(
+    user_id: uuid.UUID,
+    body: PatientIdentityRejectRequest,
+    current_admin: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    if user.role != "patient":
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Identity verification is only for patients"
+        )
+
+    patient = (
+        await db.execute(select(Patient).where(Patient.user_id == user_id))
+    ).scalar_one_or_none()
+    if not patient:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Patient profile not found")
+    if patient.identity_verification_status != "pending_review":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Identity status is '{patient.identity_verification_status}', not pending_review",
+        )
+
+    patient.identity_verification_status = "rejected"
+    patient.id_rejection_reason = body.reason
+
+    await log_action(
+        db,
+        actor=current_admin,
+        action="patient.identity_rejected",
+        target_type="user",
+        target_id=user_id,
+        meta={"reason": body.reason, "patient_email": user.email},
+    )
+    admin_actions_total.labels(action="patient.identity_rejected").inc()
+    await db.commit()
+    return {"rejected": True, "user_id": str(user_id)}
