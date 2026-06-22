@@ -20,6 +20,13 @@ class Settings(BaseSettings):
             v = v.replace("postgres://", "postgresql+asyncpg://", 1)
         elif v.startswith("postgresql://") and "+asyncpg" not in v:
             v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        # asyncpg doesn't accept sslmode= (psycopg2 convention); strip it
+        if "sslmode=" in v:
+            from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+            parsed = urlparse(v)
+            params = {k: vals[0] for k, vals in parse_qs(parsed.query).items() if k != "sslmode"}
+            v = urlunparse(parsed._replace(query=urlencode(params)))
         return v
 
     # Redis
