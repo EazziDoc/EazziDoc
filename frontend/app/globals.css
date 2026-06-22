@@ -12,3 +12,27 @@ body {
   font-family: "Inter", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+/* Smooth theme transitions */
+*,
+*::before,
+*::after {
+  transition-property: background-color, border-color, color;
+  transition-duration: 150ms;
+  transition-timing-function: ease;
+}
+
+/* Opt specific elements out of transition to avoid jank */
+button,
+a,
+input,
+textarea,
+select {
+  transition-property: background-color, border-color, color, box-shadow, opacity;
+}
+
+@media print {
+  .print\:hidden {
+    display: none !important;
+  }
+}
