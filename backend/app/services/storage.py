@@ -99,6 +99,11 @@ class StorageService:
         ext = ALLOWED_CERT_TYPES[content_type]
         return f"certifications/{user_id}/{uuid.uuid4()}.{ext}"
 
+    def make_identity_key(self, user_id: str, content_type: str) -> str:
+        """Generate an object key for a patient identity document."""
+        ext = ALLOWED_CERT_TYPES[content_type]
+        return f"identity/{user_id}/{uuid.uuid4()}.{ext}"
+
 
 StorageError = (BotoCoreError, ClientError)
 

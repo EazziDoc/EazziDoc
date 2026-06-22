@@ -3,7 +3,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
-import { adminBanUser, adminDeleteUser, adminListUsers, adminUnbanUser } from "@/lib/api";
+import {
+  adminBanUser,
+  adminDeleteUser,
+  adminListUsers,
+  adminRejectPatientIdentity,
+  adminUnbanUser,
+  adminVerifyPatientIdentity,
+} from "@/lib/api";
 import type { AdminUser } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -21,19 +28,34 @@ function roleBadge(role: string) {
   return map[role] ?? "bg-gray-100 text-gray-800";
 }
 
+function idStatusBadge(status: string | null | undefined) {
+  if (!status || status === "unverified") return <span className="text-gray-400 text-xs">Unverified</span>;
+  if (status === "pending_review") return <span className="text-amber-600 text-xs font-medium">ID pending</span>;
+  if (status === "verified") return <span className="text-green-600 text-xs font-medium">ID verified</span>;
+  if (status === "rejected") return <span className="text-red-500 text-xs font-medium">ID rejected</span>;
+  return null;
+}
+
 function UserRow({
   u,
   onBan,
   onUnban,
   onDelete,
+  onVerifyIdentity,
+  onRejectIdentity,
 }: {
   u: AdminUser;
   onBan: (id: string) => void;
   onUnban: (id: string) => void;
   onDelete: (id: string) => void;
+  onVerifyIdentity: (id: string) => void;
+  onRejectIdentity: (id: string, reason: string) => void;
 }) {
   const [confirmBan, setConfirmBan] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmVerifyId, setConfirmVerifyId] = useState(false);
+  const [showRejectId, setShowRejectId] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
 
   if (u.role === "admin") {
     return (
@@ -73,30 +95,36 @@ function UserRow({
           <span className="ml-2 text-sm text-gray-600">{u.is_active ? "Active" : "Banned"}</span>
         </td>
         <td className="px-6 py-3">
-          {u.is_verified ? <span className="text-green-600 text-sm">Verified</span> : <span className="text-gray-400 text-sm">Unverified</span>}
+          <div className="flex flex-col gap-0.5">
+            {u.is_verified
+              ? <span className="text-green-600 text-sm">Verified</span>
+              : <span className="text-gray-400 text-sm">Unverified</span>}
+            {u.role === "patient" && idStatusBadge(u.identity_verification_status)}
+          </div>
         </td>
         <td className="px-6 py-3 text-gray-400 text-sm">{formatDate(u.created_at)}</td>
         <td className="px-6 py-3">
           <div className="flex justify-end gap-3">
+            {u.role === "patient" && u.identity_verification_status === "pending_review" && (
+              <>
+                <button onClick={() => setConfirmVerifyId(true)} className="text-xs text-green-600 hover:underline">
+                  Verify ID
+                </button>
+                <button onClick={() => setShowRejectId(true)} className="text-xs text-orange-600 hover:underline">
+                  Reject ID
+                </button>
+              </>
+            )}
             {u.is_active ? (
-              <button
-                onClick={() => setConfirmBan(true)}
-                className="text-xs text-orange-600 hover:underline"
-              >
+              <button onClick={() => setConfirmBan(true)} className="text-xs text-orange-600 hover:underline">
                 Ban
               </button>
             ) : (
-              <button
-                onClick={() => onUnban(u.id)}
-                className="text-xs text-green-600 hover:underline"
-              >
+              <button onClick={() => onUnban(u.id)} className="text-xs text-green-600 hover:underline">
                 Unban
               </button>
             )}
-            <button
-              onClick={() => setConfirmDelete(true)}
-              className="text-xs text-red-600 hover:underline"
-            >
+            <button onClick={() => setConfirmDelete(true)} className="text-xs text-red-600 hover:underline">
               Delete
             </button>
           </div>
@@ -121,6 +149,51 @@ function UserRow({
         onConfirm={() => { setConfirmDelete(false); onDelete(u.id); }}
         onCancel={() => setConfirmDelete(false)}
       />
+      <ConfirmDialog
+        open={confirmVerifyId}
+        title={`Verify ID for ${u.display_name ?? u.email}?`}
+        description="This marks the patient's identity as verified and sets their account to verified."
+        confirmLabel="Verify identity"
+        onConfirm={() => { setConfirmVerifyId(false); onVerifyIdentity(u.id); }}
+        onCancel={() => setConfirmVerifyId(false)}
+      />
+      {showRejectId && (
+        <dialog
+          open
+          className="fixed inset-0 z-50 m-auto rounded-2xl border border-gray-200 bg-white p-6 shadow-xl w-full max-w-sm h-fit backdrop:bg-black/40"
+        >
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">Reject ID verification</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Provide a reason so <strong>{u.display_name ?? u.email}</strong> knows what to fix when resubmitting.
+          </p>
+          <textarea
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            rows={3}
+            placeholder="e.g. Document is blurry or ID number doesn't match"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 mb-4"
+          />
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={() => { setShowRejectId(false); setRejectReason(""); }}
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              disabled={!rejectReason.trim()}
+              onClick={() => {
+                setShowRejectId(false);
+                onRejectIdentity(u.id, rejectReason.trim());
+                setRejectReason("");
+              }}
+              className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-40"
+            >
+              Reject
+            </button>
+          </div>
+        </dialog>
+      )}
     </>
   );
 }
@@ -143,6 +216,12 @@ export default function AdminUsersPage() {
   const { mutate: ban } = useMutation({ mutationFn: adminBanUser, onSuccess: invalidate });
   const { mutate: unban } = useMutation({ mutationFn: adminUnbanUser, onSuccess: invalidate });
   const { mutate: del } = useMutation({ mutationFn: adminDeleteUser, onSuccess: invalidate });
+  const { mutate: verifyId } = useMutation({ mutationFn: adminVerifyPatientIdentity, onSuccess: invalidate });
+  const { mutate: rejectId } = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      adminRejectPatientIdentity(id, reason),
+    onSuccess: invalidate,
+  });
 
   const totalPages = data ? Math.ceil(data.total / data.page_size) : 1;
 
@@ -199,6 +278,8 @@ export default function AdminUsersPage() {
                   onBan={(id) => ban(id)}
                   onUnban={(id) => unban(id)}
                   onDelete={(id) => del(id)}
+                  onVerifyIdentity={(id) => verifyId(id)}
+                  onRejectIdentity={(id, reason) => rejectId({ id, reason })}
                 />
               ))}
             </tbody>

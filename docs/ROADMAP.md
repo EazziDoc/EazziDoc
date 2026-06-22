@@ -264,6 +264,53 @@ Reusable `ConfirmDialog` component (`components/ui/confirm-dialog.tsx`) using na
 
 ---
 
+## Phase 3f — Patient Identity Verification 🔄
+
+Patients verify their identity by submitting a government-issued ID after registration. Admin reviews and approves or rejects.
+
+**Branch:** `feature/patient-verification`
+
+### Patient flow
+1. After registration, a banner on the patient dashboard prompts identity verification.
+2. Patient goes to **Settings → Identity verification**, selects ID type, enters ID number, and uploads a document scan (PDF, JPEG, or PNG, max 10 MB).
+3. Status changes to `pending_review`. Banner updates to "under review".
+4. If rejected by admin, banner shows the rejection reason with a **Resubmit →** link.
+5. Once approved, banner shows a green "Identity verified" confirmation.
+
+### Identity status lifecycle
+`unverified` → `pending_review` → `verified` | `rejected` → `pending_review` (on resubmit)
+
+Approving a patient's identity also sets `user.is_verified = True`.
+
+### New fields on `patients` table
+| Column | Type | Description |
+|---|---|---|
+| `id_type` | VARCHAR(30) | `national_id` \| `passport` \| `drivers_license` |
+| `id_number` | VARCHAR(100) | The ID number as entered by the patient |
+| `id_document_key` | VARCHAR(500) | R2 object key for the uploaded document |
+| `identity_verification_status` | VARCHAR(20) | `unverified` \| `pending_review` \| `verified` \| `rejected` |
+| `id_rejection_reason` | TEXT | Admin rejection note shown to the patient |
+| `id_verified_at` | TIMESTAMP | When admin approved |
+
+### Backend endpoints
+| Endpoint | Role | Description |
+|---|---|---|
+| `POST /patients/me/identity` | patient | Submit ID type, number, and document (multipart) |
+| `POST /admin/users/{id}/verify-identity` | admin | Approve identity; sets `is_verified=True`, logs audit |
+| `POST /admin/users/{id}/reject-identity` | admin | Reject with reason; patient can resubmit |
+
+### Document storage
+- Stored at: `identity/{user_id}/{uuid}.{ext}` in Cloudflare R2
+- Old document replaced on resubmission (best-effort delete of prior key)
+- Accepted types: PDF, JPEG, PNG
+
+### Admin Users page changes
+- Identity status badge shown in the Verified column for patient rows
+- **Verify ID** and **Reject ID** buttons appear for patients with `pending_review` status
+- Reject dialog requires a reason before submission
+
+---
+
 ## Phase 3e — Admin Registration 🔄
 
 Invite-code-gated admin account creation, replacing the manual SQL promotion workflow.

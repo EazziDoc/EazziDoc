@@ -1,9 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Calendar, FileText, Upload } from "lucide-react";
+import { AlertCircle, Calendar, CheckCircle, Clock, FileText, Upload } from "lucide-react";
 import Link from "next/link";
-import { listAppointments, listDiagnoses } from "@/lib/api";
+import { getPatientProfile, listAppointments, listDiagnoses } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -19,6 +19,12 @@ export default function PatientDashboard() {
     queryKey: ["appointments"],
     queryFn: listAppointments,
   });
+  const { data: profile } = useQuery({
+    queryKey: ["patient-profile"],
+    queryFn: getPatientProfile,
+  });
+
+  const idStatus = profile?.identity_verification_status ?? "unverified";
 
   const pending = diagnoses.filter((d) => d.status === "pending").length;
   const ready = diagnoses.filter((d) => d.status === "ai_complete").length;
@@ -33,6 +39,56 @@ export default function PatientDashboard() {
           Welcome back, {user?.first_name}
         </h1>
       </div>
+
+      {/* Identity verification banner */}
+      {idStatus === "unverified" && (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <AlertCircle className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-amber-800">Verify your identity</p>
+            <p className="text-sm text-amber-700 mt-0.5">
+              Submit a government-issued ID to unlock full platform access.
+            </p>
+          </div>
+          <Link
+            href="/patient/settings#identity-verification"
+            className="shrink-0 text-sm font-medium text-amber-800 underline hover:text-amber-900"
+          >
+            Complete →
+          </Link>
+        </div>
+      )}
+      {idStatus === "pending_review" && (
+        <div className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
+          <Clock className="h-5 w-5 text-blue-500 shrink-0" />
+          <p className="text-sm text-blue-800">
+            Your identity verification is <strong>under review</strong>. We'll notify you once it's approved.
+          </p>
+        </div>
+      )}
+      {idStatus === "rejected" && (
+        <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+          <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-red-800">Identity verification rejected</p>
+            {profile?.id_rejection_reason && (
+              <p className="text-sm text-red-700 mt-0.5">{profile.id_rejection_reason}</p>
+            )}
+          </div>
+          <Link
+            href="/patient/settings#identity-verification"
+            className="shrink-0 text-sm font-medium text-red-800 underline hover:text-red-900"
+          >
+            Resubmit →
+          </Link>
+        </div>
+      )}
+      {idStatus === "verified" && (
+        <div className="flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 px-4 py-3">
+          <CheckCircle className="h-5 w-5 text-green-500 shrink-0" />
+          <p className="text-sm text-green-800">Identity verified.</p>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">

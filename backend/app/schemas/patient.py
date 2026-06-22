@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -24,8 +24,21 @@ class PatientProfileResponse(BaseModel):
     phone: str | None
     country: str | None
     medical_history: dict
+    identity_verification_status: str = "unverified"
+    id_type: str | None = None
+    id_rejection_reason: str | None = None
+    id_verified_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class PatientIdentitySubmit(BaseModel):
+    id_type: str = Field(..., pattern="^(national_id|passport|drivers_license)$")
+    id_number: str = Field(..., min_length=3, max_length=100)
+
+
+class PatientIdentityRejectRequest(BaseModel):
+    reason: str = Field(..., min_length=5, max_length=500)
 
 
 class DoctorProfileUpdate(BaseModel):
