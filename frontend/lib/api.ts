@@ -76,11 +76,24 @@ export async function register(data: {
   role: "patient" | "doctor";
   first_name: string;
   last_name: string;
+  specialty?: string;
+  license_number?: string;
+  qualifications?: string[];
+  other_qualifications?: string;
 }) {
   return req<{ user_id: string; email: string; role: string }>(
     "/auth/register",
     { method: "POST", body: JSON.stringify(data) },
   );
+}
+
+export async function uploadCertifications(files: File[]) {
+  const form = new FormData();
+  for (const f of files) form.append("files", f);
+  return req<{ uploaded: number; total: number }>("/doctors/me/certifications", {
+    method: "POST",
+    body: form,
+  });
 }
 
 export async function login(email: string, password: string) {
@@ -476,5 +489,55 @@ export async function messageDoctorPatient(patientId: string, message: string) {
   return req<void>(`/doctor/message/patient/${patientId}`, {
     method: "POST",
     body: JSON.stringify({ message }),
+  });
+}
+
+// ── admin: doctor registration review ────────────────────────────────────────
+
+export interface AdminDoctorItem {
+  id: string;
+  user_id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  specialty: string | null;
+  license_number: string | null;
+  qualifications: string[];
+  other_qualifications: string | null;
+  registration_status: "pending_review" | "approved" | "rejected";
+  is_verified: boolean;
+  created_at: string;
+  reviewed_at: string | null;
+}
+
+export interface AdminDoctorDetail extends AdminDoctorItem {
+  certification_urls: string[];
+  rejection_reason: string | null;
+  is_available: boolean;
+  updated_at: string;
+}
+
+export async function adminListDoctors(params?: { page?: number; status?: string }) {
+  const q = new URLSearchParams();
+  if (params?.page) q.set("page", String(params.page));
+  if (params?.status) q.set("status", params.status);
+  const qs = q.toString();
+  return req<{ doctors: AdminDoctorItem[]; total: number; page: number; page_size: number }>(
+    `/admin/doctors${qs ? `?${qs}` : ""}`,
+  );
+}
+
+export async function adminGetDoctor(id: string) {
+  return req<AdminDoctorDetail>(`/admin/doctors/${id}`);
+}
+
+export async function adminApproveDoctor(id: string) {
+  return req<{ approved: boolean }>(`/admin/doctors/${id}/approve`, { method: "POST" });
+}
+
+export async function adminRejectDoctor(id: string, reason: string) {
+  return req<{ rejected: boolean }>(`/admin/doctors/${id}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
   });
 }

@@ -44,5 +44,9 @@ class DoctorProfileResponse(BaseModel):
     license_number: str | None
     is_verified: bool
     is_available: bool
+    qualifications: list[str] = []
+    other_qualifications: str | None = None
+    registration_status: str = "pending_review"
+    rejection_reason: str | None = None
 
     model_config = {"from_attributes": True}

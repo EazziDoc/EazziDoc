@@ -31,6 +31,10 @@ export interface DoctorProfile {
   license_number: string | null;
   is_verified: boolean;
   is_available: boolean;
+  qualifications: string[];
+  other_qualifications: string | null;
+  registration_status: "pending_review" | "approved" | "rejected";
+  rejection_reason: string | null;
 }
 
 export interface DiagnosisReport {

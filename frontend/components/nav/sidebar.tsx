@@ -3,10 +3,12 @@
 import {
   Activity,
   Calendar,
+  ClipboardList,
   FileText,
   Home,
   LogOut,
   Settings,
+  ShieldCheck,
   Stethoscope,
   Upload,
   UserCheck,
@@ -38,8 +40,10 @@ const doctorLinks = [
 const adminLinks = [
   { href: "/admin", label: "Overview", icon: Home },
   { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/doctors", label: "Doctor registrations", icon: ShieldCheck },
   { href: "/admin/diagnoses", label: "Diagnoses", icon: FileText },
   { href: "/admin/queue", label: "Queue health", icon: Activity },
+  { href: "/admin/audit-logs", label: "Audit logs", icon: ClipboardList },
 ];
 
 export function Sidebar() {

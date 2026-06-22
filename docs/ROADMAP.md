@@ -64,8 +64,9 @@ Next.js 14 App Router frontend, deployed on Vercel.
 ## Phase 3 — Admin Dashboard 🔄
 
 Internal operations and business intelligence panel. Gated to a new `admin` role.
+Admin login is separated from patient/doctor login — `/admin/login` uses a dark-themed portal distinct from `/login`.
 
-**Branch:** `feature/admin`
+**Branches:** `feature/admin-dashboard`, `feature/doctor-credentials`
 
 ### Backend
 
@@ -74,26 +75,32 @@ Internal operations and business intelligence panel. Gated to a new `admin` role
 | `GET /admin/stats/overview` | Platform-level KPIs snapshot |
 | `GET /admin/stats/diagnoses` | Diagnosis volume, modality breakdown, AI performance |
 | `GET /admin/stats/appointments` | Booking funnel, completion rate, cancellation rate |
-| `GET /admin/stats/doctors` | Per-doctor activity: cases reviewed, avg review time, queue wait |
 | `GET /admin/users` | Paginated user list with filters (role, verified, active) |
 | `GET /admin/users/{id}` | Full user detail — profile + diagnosis history + appointments |
 | `PATCH /admin/users/{id}` | Activate/deactivate, verify doctor, change role |
 | `GET /admin/diagnoses` | All diagnoses — filterable by status/modality/urgency/date |
+| `GET /admin/diagnoses/{id}` | Full diagnosis detail with AI report and patient info |
 | `POST /admin/diagnoses/{id}/requeue` | Manually re-trigger Celery pipeline for a failed diagnosis |
 | `GET /admin/queue/health` | Celery queue depth, active workers, failed/retry task counts |
-| `GET /admin/storage/stats` | R2 bucket: total objects, total size, per-patient breakdown |
+| `GET /admin/audit-logs` | Immutable audit log of all admin actions, filterable by action type |
+| `GET /admin/doctors` | List all doctor registrations — filterable by status |
+| `GET /admin/doctors/{id}` | Full doctor registration detail including presigned certification URLs |
+| `POST /admin/doctors/{id}/approve` | Approve doctor; sets `is_verified=True`, `registration_status=approved` |
+| `POST /admin/doctors/{id}/reject` | Reject doctor with mandatory reason; sets `registration_status=rejected` |
 
 ### Frontend pages
 
 | Route | What it shows |
 |---|---|
-| `/admin` | Dashboard overview — KPI cards + sparklines |
+| `/admin/login` | Separate dark-themed admin portal login (rejects non-admin accounts) |
+| `/admin` | Dashboard overview — KPI cards, quick links |
 | `/admin/users` | User table with search/filter + quick actions (verify, deactivate) |
-| `/admin/users/[id]` | Full patient or doctor profile + timeline |
 | `/admin/diagnoses` | Diagnosis table with filters |
 | `/admin/diagnoses/[id]` | Full AI report + doctor review + re-queue button |
-| `/admin/queue` | Celery queue health — worker status, task counts, failure log |
-| `/admin/storage` | R2 usage summary |
+| `/admin/queue` | Celery queue health — worker status, task counts |
+| `/admin/audit-logs` | Paginated audit log with action filter and color-coded badges |
+| `/admin/doctors` | Doctor registration list — filter by pending/approved/rejected |
+| `/admin/doctors/[id]` | Full registration detail, cert download, approve/reject actions, print-to-PDF export |
 
 ### KPI definitions
 
@@ -132,6 +139,86 @@ Internal operations and business intelligence panel. Gated to a new `admin` role
 - Full diagnosis history (date, modality, status, AI urgency, doctor review outcome)
 - Full appointment history (dates, doctors, statuses)
 - Storage used (image count + MB)
+
+---
+
+## Phase 3b — Doctor Registration Approval Workflow 🔄
+
+Doctors must submit credentials at registration and be approved by an admin before patients can book with them.
+
+**Branch:** `feature/doctor-credentials`
+
+### Doctor registration flow
+1. Doctor fills step 1: name, email, password (same as before).
+2. Doctor fills step 2: specialty, licence number, qualifications (multi-select from catalogue + free-text), certification document upload (PDF/JPG/PNG, up to 5 files, 10 MB each).
+3. After submit: auto-login → cert upload → redirect to `/doctor/pending` (pending review page).
+4. Admin reviews at `/admin/doctors` and approves or rejects (with reason).
+5. Doctor sees their status and rejection reason at `/doctor/pending`.
+
+### Qualification catalogue (multi-select checkboxes)
+
+**African councils & colleges:**
+- MDCN (Medical and Dental Council of Nigeria)
+- HPCSA (Health Professions Council of South Africa)
+- Medical Council of Ghana (MCG)
+- Kenya Medical Practitioners & Dentists Council (KMPDC)
+- Medical Council of Uganda
+- Tanzania Medical Council (TMC)
+- Ethiopian Medical Council (EMC)
+- West African College of Physicians (WACP) / Fellow (FWACP)
+- West African College of Surgeons (WACS) / Fellow (FWACS)
+- College of Medicine of South Africa (CMSA)
+
+**Undergraduate degrees:** MBBS, MBChB, MD, DO, BDS, MBBCh
+
+**Postgraduate:** PhD, MSc (Clinical), MPH, MMed
+
+**UK Royal Colleges:** MRCP, MRCS, FRCP, FRCS, MRCGP, FRCR, FRCOG
+
+**USA boards:** ABMS Board Certification, FACP, FACS, FACOG, FACR
+
+**International:** EBMS, FCFP (Canada), WHO Fellowship, Commonwealth Medical Fellowship
+
+### Doctor model additions
+```
+qualifications        JSONB      list of selected credential strings
+other_qualifications  TEXT       free-text for unlisted qualifications
+certification_keys    JSONB      R2 object keys for uploaded cert documents
+registration_status   VARCHAR    pending_review | approved | rejected (default: pending_review)
+rejection_reason      TEXT       admin rejection note shown to doctor
+reviewed_at           TIMESTAMP  when admin took action
+```
+
+### Certification storage
+- Endpoint: `POST /doctors/me/certifications` (multipart upload, requires auth)
+- Allowed types: PDF, JPEG, PNG
+- Max: 5 files, 10 MB each
+- Stored at: `certifications/{user_id}/{uuid}.{ext}` in Cloudflare R2
+- Admin access: presigned GET URLs (1 h TTL) returned by `GET /admin/doctors/{id}`
+
+### PDF export
+Client-side print: the admin detail page at `/admin/doctors/[id]` has `@media print` CSS and an "Export PDF / Print" button that calls `window.print()`. No server-side PDF generation needed.
+
+---
+
+## Phase 3c — Dark Mode 📋
+
+System/manual dark mode toggle across all pages — patient, doctor, and admin portals.
+
+**Branch:** `feature/dark-mode`
+
+### Implementation
+- **Library:** `next-themes` with `ThemeProvider`
+- **Tailwind:** `darkMode: "class"` in `tailwind.config.ts`
+- **Storage:** user preference persisted in `localStorage` via next-themes
+- **Toggle:** theme toggle button in the sidebar and admin nav for all roles
+- **Scope:** all pages — auth pages, patient dashboard, doctor dashboard, admin dashboard
+
+### Tailwind dark variants applied to
+- Shared components: `Card`, `Button`, `Input`, sidebar
+- Auth pages: login, register, admin login
+- All dashboard pages (patient, doctor, admin)
+- Landing page
 
 ---
 

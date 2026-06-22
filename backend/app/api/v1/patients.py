@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -17,6 +17,7 @@ from app.schemas.patient import (
     PatientProfileUpdate,
 )
 from app.services import email as email_svc
+from app.services.storage import ALLOWED_CERT_TYPES, MAX_FILE_SIZE, storage_service
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,49 @@ async def update_my_doctor_profile(
             logger.exception("Settings email failed for user %s", current_user.id)
 
     return doctor
+
+
+@router.post("/doctors/me/certifications", status_code=status.HTTP_200_OK)
+async def upload_certifications(
+    files: list[UploadFile],
+    current_user: User = Depends(require_role("doctor")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload certification documents (PDF or image). Max 5 files, 10 MB each."""
+    if not files:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No files provided")
+    if len(files) > 5:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Maximum 5 certification files allowed"
+        )
+
+    result = await db.execute(select(Doctor).where(Doctor.user_id == current_user.id))
+    doctor = result.scalar_one_or_none()
+    if not doctor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Doctor profile not found"
+        )
+
+    uploaded_keys: list[str] = []
+    for file in files:
+        if file.content_type not in ALLOWED_CERT_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail=f"Unsupported file type: {file.content_type}. Allowed: PDF, JPEG, PNG",
+            )
+        data = await file.read()
+        if len(data) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File {file.filename!r} exceeds 10 MB limit",
+            )
+        key = storage_service.make_cert_key(str(current_user.id), file.content_type)
+        await storage_service.upload(data, key, file.content_type)
+        uploaded_keys.append(key)
+
+    doctor.certification_keys = list(doctor.certification_keys or []) + uploaded_keys
+    await db.commit()
+    return {"uploaded": len(uploaded_keys), "total": len(doctor.certification_keys)}
 
 
 @router.patch("/doctors/me/availability", response_model=DoctorProfileResponse)
