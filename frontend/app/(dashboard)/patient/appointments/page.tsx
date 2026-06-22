@@ -14,6 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input, Textarea } from "@/components/ui/input";
 import { formatDateTime, statusColor } from "@/lib/utils";
 
@@ -149,6 +150,7 @@ function BookingForm({
 
 function AppointmentCard({ a, onCancel }: { a: import("@/lib/types").Appointment; onCancel: (id: string) => void }) {
   const [paying, setPaying] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const { data: payment } = useQuery({
     queryKey: ["payment", a.id],
     queryFn: () => getAppointmentPayment(a.id),
@@ -196,9 +198,23 @@ function AppointmentCard({ a, onCancel }: { a: import("@/lib/types").Appointment
           </button>
         )}
         {["booked", "confirmed"].includes(a.status) && (
-          <button onClick={() => onCancel(a.id)} className="text-xs text-red-500 hover:underline">
-            Cancel
-          </button>
+          <>
+            <button
+              onClick={() => setConfirmCancel(true)}
+              className="text-xs text-red-500 hover:underline"
+            >
+              Cancel
+            </button>
+            <ConfirmDialog
+              open={confirmCancel}
+              title="Cancel appointment?"
+              description="This will cancel the appointment. The action cannot be undone."
+              confirmLabel="Yes, cancel"
+              destructive
+              onConfirm={() => { setConfirmCancel(false); onCancel(a.id); }}
+              onCancel={() => setConfirmCancel(false)}
+            />
+          </>
         )}
       </div>
     </div>

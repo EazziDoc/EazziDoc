@@ -173,6 +173,26 @@ async def upload_certifications(
     return {"uploaded": len(uploaded_keys), "total": len(doctor.certification_keys)}
 
 
+@router.delete("/patients/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_my_patient_account(
+    current_user: User = Depends(require_role("patient")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Soft-delete the patient's own account. Diagnosis history is preserved."""
+    current_user.is_active = False
+    await db.commit()
+
+
+@router.delete("/doctors/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_my_doctor_account(
+    current_user: User = Depends(require_role("doctor")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Soft-delete the doctor's own account. Diagnosis history is preserved."""
+    current_user.is_active = False
+    await db.commit()
+
+
 @router.patch("/doctors/me/availability", response_model=DoctorProfileResponse)
 async def set_doctor_availability(
     is_available: bool,

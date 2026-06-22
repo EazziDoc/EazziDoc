@@ -222,6 +222,48 @@ System/manual dark mode toggle across all pages — patient, doctor, and admin p
 
 ---
 
+## Phase 3d — Account Management & Moderation 🔄
+
+Admin-side moderation controls and user-initiated account deletion, plus confirmation dialogs on destructive actions.
+
+**Branch:** `feature/account-management`
+
+### Admin moderation (admin portal)
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `POST /admin/users/{id}/ban` | admin | Set `is_active=False`, log `user.banned` audit event |
+| `POST /admin/users/{id}/unban` | admin | Set `is_active=True`, log `user.unbanned` audit event |
+| `DELETE /admin/users/{id}` | admin | Hard delete user row; diagnosis records retained; log `user.deleted` |
+
+- Admins **cannot** ban or delete other admin accounts (guarded at API level)
+- Admins **cannot** ban/delete their own account
+- All moderation actions are logged to the audit trail
+- Frontend: ban / unban / delete buttons on the Users table with confirmation dialogs per action
+
+### Self-service account deletion
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `DELETE /patients/me` | patient | Soft-delete: sets `is_active=False`, logs out user |
+| `DELETE /doctors/me` | doctor | Soft-delete: sets `is_active=False`, logs out user |
+
+- Diagnosis history is **preserved** for medical record compliance
+- `RefreshToken` rows are cascade-deleted (user is immediately logged out on all devices)
+- Account deletion is available from the **Settings** page under a "Danger zone" section
+- Confirmation dialog required before deletion
+
+### Confirmation dialogs
+
+Reusable `ConfirmDialog` component (`components/ui/confirm-dialog.tsx`) using native `<dialog>` element:
+
+- **Appointment cancellation** — patient and doctor appointment pages both prompt before calling cancel API
+- **Account deletion** — patient and doctor settings pages both show dialog before calling delete API
+- **Admin ban** — confirmation before banning a user
+- **Admin delete** — separate stricter confirmation before permanent deletion
+
+---
+
 ## Phase 4 — Specialist ML Models 🔮
 
 Replace Gemini with fine-tuned open-source models per modality. Hosted on Fly.io GPU workers or Hugging Face Inference Endpoints.

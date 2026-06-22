@@ -457,6 +457,92 @@ async def update_user(
     return await get_user(user_id, current_admin, db)
 
 
+@router.post("/users/{user_id}/ban", status_code=status.HTTP_200_OK)
+async def ban_user(
+    user_id: uuid.UUID,
+    current_admin: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Deny platform access for a patient or doctor (sets is_active=False)."""
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    if user.id == current_admin.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot ban your own account")
+    if user.role == "admin":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot ban another admin")
+    if not user.is_active:
+        raise HTTPException(status.HTTP_409_CONFLICT, "User is already banned")
+
+    user.is_active = False
+    await log_action(
+        db,
+        actor=current_admin,
+        action="user.banned",
+        target_type="user",
+        target_id=user_id,
+        meta={"target_email": user.email, "target_role": user.role},
+    )
+    admin_actions_total.labels(action="user.banned").inc()
+    await db.commit()
+    return {"id": str(user_id), "is_active": False}
+
+
+@router.post("/users/{user_id}/unban", status_code=status.HTTP_200_OK)
+async def unban_user(
+    user_id: uuid.UUID,
+    current_admin: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Restore platform access for a banned user."""
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    if user.is_active:
+        raise HTTPException(status.HTTP_409_CONFLICT, "User is already active")
+
+    user.is_active = True
+    await log_action(
+        db,
+        actor=current_admin,
+        action="user.unbanned",
+        target_type="user",
+        target_id=user_id,
+        meta={"target_email": user.email, "target_role": user.role},
+    )
+    admin_actions_total.labels(action="user.unbanned").inc()
+    await db.commit()
+    return {"id": str(user_id), "is_active": True}
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(
+    user_id: uuid.UUID,
+    current_admin: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permanently delete a user and all their data. Diagnosis records are retained."""
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    if user.id == current_admin.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot delete your own account")
+    if user.role == "admin":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot delete another admin")
+
+    await log_action(
+        db,
+        actor=current_admin,
+        action="user.deleted",
+        target_type="user",
+        target_id=user_id,
+        meta={"target_email": user.email, "target_role": user.role},
+    )
+    admin_actions_total.labels(action="user.deleted").inc()
+    await db.delete(user)
+    await db.commit()
+
+
 # ── diagnosis management ───────────────────────────────────────────────────────
 
 
