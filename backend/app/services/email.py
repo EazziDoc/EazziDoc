@@ -327,6 +327,43 @@ def send_welcome(email: str, name: str, role: str) -> None:
     )
 
 
+def send_admin_welcome(email: str, name: str) -> None:
+    admin_url = f"{settings.FRONTEND_URL}/admin"
+
+    body = f"""
+    <h2 style="margin:0 0 8px;font-size:20px;color:#111827;">Admin account created</h2>
+    <p style="margin:0 0 20px;font-size:15px;color:#4b5563;line-height:1.6;">
+      Hi {name}, a new EazziDoc administrator account has been registered using this email address.
+    </p>
+    <table cellpadding="0" cellspacing="0" width="100%"
+           style="background:{_LIGHT_BG};border-radius:8px;padding:20px;margin-bottom:28px;">
+      <tr>
+        <td style="font-size:13px;color:#6b7280;padding-bottom:6px;">Account email</td>
+        <td style="font-size:14px;font-weight:600;color:#111827;text-align:right;">{email}</td>
+      </tr>
+      <tr>
+        <td style="font-size:13px;color:#6b7280;padding-top:8px;">Role</td>
+        <td style="font-size:14px;color:#111827;text-align:right;padding-top:8px;">Administrator</td>
+      </tr>
+    </table>
+    <p style="margin:0 0 24px;font-size:14px;color:#4b5563;line-height:1.6;">
+      If you did not create this account, your invite code may be compromised.
+      Contact your team immediately to rotate it.
+    </p>
+    <a href="{admin_url}"
+       style="display:inline-block;background:{_PRIMARY};color:#ffffff;
+              font-size:15px;font-weight:600;padding:13px 28px;
+              border-radius:8px;text-decoration:none;">
+      Go to admin portal →
+    </a>
+    """
+    _send(
+        to=email,
+        subject="[EazziDoc] Admin account created",
+        html=_base("Admin Account Created — EazziDoc", body),
+    )
+
+
 def send_settings_updated(email: str, name: str, changed_fields: list[str]) -> None:
     fields_html = "".join(
         f'<li style="font-size:14px;color:#374151;padding:3px 0;">{f.replace("_", " ").capitalize()}</li>'
