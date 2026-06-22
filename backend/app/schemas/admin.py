@@ -142,6 +142,26 @@ class AdminDiagnosisList(BaseModel):
     page_size: int
 
 
+class AdminDiagnosisDetail(BaseModel):
+    id: uuid.UUID
+    patient_id: uuid.UUID
+    patient_name: str | None
+    patient_email: str | None
+    modality: str | None
+    status: str
+    model_used: str | None
+    confidence_score: float | None
+    urgency: str | None
+    image_keys: list[str]
+    report: dict | None
+    doctor_notes: str | None
+    created_at: datetime
+    updated_at: datetime
+    doctor_reviewed_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
 # ── queue / worker health ─────────────────────────────────────────────────────
 
 
@@ -183,3 +203,57 @@ class AuditLogList(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# ── doctor registration review ────────────────────────────────────────────────
+
+
+class AdminDoctorItem(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    email: str
+    first_name: str
+    last_name: str
+    specialty: str | None
+    license_number: str | None
+    qualifications: list[str]
+    other_qualifications: str | None
+    registration_status: str
+    is_verified: bool
+    created_at: datetime
+    reviewed_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class AdminDoctorList(BaseModel):
+    doctors: list[AdminDoctorItem]
+    total: int
+    page: int
+    page_size: int
+
+
+class AdminDoctorDetail(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    email: str
+    first_name: str
+    last_name: str
+    specialty: str | None
+    license_number: str | None
+    qualifications: list[str]
+    other_qualifications: str | None
+    certification_urls: list[str]  # presigned download URLs
+    registration_status: str
+    rejection_reason: str | None
+    is_verified: bool
+    is_available: bool
+    created_at: datetime
+    updated_at: datetime
+    reviewed_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class AdminDoctorReviewRequest(BaseModel):
+    reason: str | None = None  # required only for rejection

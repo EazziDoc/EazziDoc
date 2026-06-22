@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    ADMIN_INVITE_CODE: str = (
+        ""  # Required to register a new admin account; empty = feature disabled
+    )
 
     # Storage
     CLOUDFLARE_R2_ACCOUNT_ID: str = ""
@@ -51,13 +54,10 @@ class Settings(BaseSettings):
     # AI — Vision
     HUGGINGFACE_API_KEY: str = ""
 
-    # Email / SMTP
-    SMTP_HOST: str = ""
-    SMTP_PORT: int = 465
-    SMTP_USER: str = ""
-    SMTP_PASSWORD: str = ""
-    SMTP_FROM: str = ""
-    REPORT_EMAIL_BCC: str = ""  # BCC address for all diagnosis-ready emails
+    # Email — Resend
+    RESEND_API_KEY: str = ""
+    SMTP_FROM: str = "EazziDoc <onboarding@resend.dev>"
+    REPORT_EMAIL_BCC: str = ""
     FRONTEND_URL: str = "http://localhost:3000"
 
     # Rate limiting

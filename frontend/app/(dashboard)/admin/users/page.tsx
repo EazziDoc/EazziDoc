@@ -3,10 +3,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
-import { adminListUsers, adminUpdateUser } from "@/lib/api";
+import { adminBanUser, adminDeleteUser, adminListUsers, adminUnbanUser } from "@/lib/api";
 import type { AdminUser } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatDate } from "@/lib/utils";
 
 const ROLES = ["", "patient", "doctor", "admin"];
@@ -20,41 +21,107 @@ function roleBadge(role: string) {
   return map[role] ?? "bg-gray-100 text-gray-800";
 }
 
-function UserRow({ u, onToggle }: { u: AdminUser; onToggle: (id: string, active: boolean) => void }) {
+function UserRow({
+  u,
+  onBan,
+  onUnban,
+  onDelete,
+}: {
+  u: AdminUser;
+  onBan: (id: string) => void;
+  onUnban: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [confirmBan, setConfirmBan] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  if (u.role === "admin") {
+    return (
+      <tr className="hover:bg-gray-50">
+        <td className="px-6 py-3">
+          <Link href={`/admin/users/${u.id}`} className="text-primary-600 hover:underline font-medium">
+            {u.display_name ?? u.email}
+          </Link>
+          {u.display_name && <p className="text-xs text-gray-400">{u.email}</p>}
+        </td>
+        <td className="px-6 py-3"><Badge className={roleBadge(u.role)}>{u.role}</Badge></td>
+        <td className="px-6 py-3">
+          <span className={`inline-block h-2 w-2 rounded-full ${u.is_active ? "bg-green-500" : "bg-gray-300"}`} />
+          <span className="ml-2 text-sm text-gray-600">{u.is_active ? "Active" : "Inactive"}</span>
+        </td>
+        <td className="px-6 py-3">
+          {u.is_verified ? <span className="text-green-600 text-sm">Verified</span> : <span className="text-gray-400 text-sm">Unverified</span>}
+        </td>
+        <td className="px-6 py-3 text-gray-400 text-sm">{formatDate(u.created_at)}</td>
+        <td className="px-6 py-3" />
+      </tr>
+    );
+  }
+
   return (
-    <tr className="hover:bg-gray-50">
-      <td className="px-6 py-3">
-        <Link href={`/admin/users/${u.id}`} className="text-primary-600 hover:underline font-medium">
-          {u.display_name ?? u.email}
-        </Link>
-        {u.display_name && (
-          <p className="text-xs text-gray-400">{u.email}</p>
-        )}
-      </td>
-      <td className="px-6 py-3">
-        <Badge className={roleBadge(u.role)}>{u.role}</Badge>
-      </td>
-      <td className="px-6 py-3">
-        <span className={`inline-block h-2 w-2 rounded-full ${u.is_active ? "bg-green-500" : "bg-gray-300"}`} />
-        <span className="ml-2 text-sm text-gray-600">{u.is_active ? "Active" : "Inactive"}</span>
-      </td>
-      <td className="px-6 py-3">
-        {u.is_verified ? (
-          <span className="text-green-600 text-sm">Verified</span>
-        ) : (
-          <span className="text-gray-400 text-sm">Unverified</span>
-        )}
-      </td>
-      <td className="px-6 py-3 text-gray-400 text-sm">{formatDate(u.created_at)}</td>
-      <td className="px-6 py-3 text-right">
-        <button
-          onClick={() => onToggle(u.id, !u.is_active)}
-          className={`text-xs hover:underline ${u.is_active ? "text-red-500" : "text-green-600"}`}
-        >
-          {u.is_active ? "Deactivate" : "Activate"}
-        </button>
-      </td>
-    </tr>
+    <>
+      <tr className="hover:bg-gray-50">
+        <td className="px-6 py-3">
+          <Link href={`/admin/users/${u.id}`} className="text-primary-600 hover:underline font-medium">
+            {u.display_name ?? u.email}
+          </Link>
+          {u.display_name && <p className="text-xs text-gray-400">{u.email}</p>}
+        </td>
+        <td className="px-6 py-3"><Badge className={roleBadge(u.role)}>{u.role}</Badge></td>
+        <td className="px-6 py-3">
+          <span className={`inline-block h-2 w-2 rounded-full ${u.is_active ? "bg-green-500" : "bg-gray-300"}`} />
+          <span className="ml-2 text-sm text-gray-600">{u.is_active ? "Active" : "Banned"}</span>
+        </td>
+        <td className="px-6 py-3">
+          {u.is_verified ? <span className="text-green-600 text-sm">Verified</span> : <span className="text-gray-400 text-sm">Unverified</span>}
+        </td>
+        <td className="px-6 py-3 text-gray-400 text-sm">{formatDate(u.created_at)}</td>
+        <td className="px-6 py-3">
+          <div className="flex justify-end gap-3">
+            {u.is_active ? (
+              <button
+                onClick={() => setConfirmBan(true)}
+                className="text-xs text-orange-600 hover:underline"
+              >
+                Ban
+              </button>
+            ) : (
+              <button
+                onClick={() => onUnban(u.id)}
+                className="text-xs text-green-600 hover:underline"
+              >
+                Unban
+              </button>
+            )}
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="text-xs text-red-600 hover:underline"
+            >
+              Delete
+            </button>
+          </div>
+        </td>
+      </tr>
+
+      <ConfirmDialog
+        open={confirmBan}
+        title={`Ban ${u.display_name ?? u.email}?`}
+        description="This will immediately revoke their access to the platform. You can unban them later."
+        confirmLabel="Ban user"
+        destructive
+        onConfirm={() => { setConfirmBan(false); onBan(u.id); }}
+        onCancel={() => setConfirmBan(false)}
+      />
+      <ConfirmDialog
+        open={confirmDelete}
+        title={`Permanently delete ${u.display_name ?? u.email}?`}
+        description="This will permanently remove the user account. Medical records are retained. This cannot be undone."
+        confirmLabel="Delete permanently"
+        destructive
+        onConfirm={() => { setConfirmDelete(false); onDelete(u.id); }}
+        onCancel={() => setConfirmDelete(false)}
+      />
+    </>
   );
 }
 
@@ -69,11 +136,13 @@ export default function AdminUsersPage() {
     queryFn: () => adminListUsers({ page, role: role || undefined, search: search || undefined }),
   });
 
-  const { mutate: toggle } = useMutation({
-    mutationFn: ({ id, active }: { id: string; active: boolean }) =>
-      adminUpdateUser(id, { is_active: active }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-users"] }),
-  });
+  function invalidate() {
+    qc.invalidateQueries({ queryKey: ["admin-users"] });
+  }
+
+  const { mutate: ban } = useMutation({ mutationFn: adminBanUser, onSuccess: invalidate });
+  const { mutate: unban } = useMutation({ mutationFn: adminUnbanUser, onSuccess: invalidate });
+  const { mutate: del } = useMutation({ mutationFn: adminDeleteUser, onSuccess: invalidate });
 
   const totalPages = data ? Math.ceil(data.total / data.page_size) : 1;
 
@@ -127,7 +196,9 @@ export default function AdminUsersPage() {
                 <UserRow
                   key={u.id}
                   u={u}
-                  onToggle={(id, active) => toggle({ id, active })}
+                  onBan={(id) => ban(id)}
+                  onUnban={(id) => unban(id)}
+                  onDelete={(id) => del(id)}
                 />
               ))}
             </tbody>

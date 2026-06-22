@@ -68,10 +68,16 @@ export default function LoginPage() {
           Sign in
         </Button>
       </form>
-      <p className="mt-4 text-center text-sm text-gray-500">
+      <p className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
         No account?{" "}
-        <Link href="/register" className="font-medium text-primary-600 hover:underline">
+        <Link href="/register" className="font-medium text-primary-600 hover:underline dark:text-primary-400">
           Register
+        </Link>
+      </p>
+      <p className="mt-2 text-center text-xs text-gray-400 dark:text-gray-500">
+        Admin?{" "}
+        <Link href="/admin/login" className="text-gray-500 hover:underline dark:text-gray-400">
+          Use the admin portal
         </Link>
       </p>
     </Card>

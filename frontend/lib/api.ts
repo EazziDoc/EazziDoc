@@ -76,11 +76,24 @@ export async function register(data: {
   role: "patient" | "doctor";
   first_name: string;
   last_name: string;
+  specialty?: string;
+  license_number?: string;
+  qualifications?: string[];
+  other_qualifications?: string;
 }) {
   return req<{ user_id: string; email: string; role: string }>(
     "/auth/register",
     { method: "POST", body: JSON.stringify(data) },
   );
+}
+
+export async function uploadCertifications(files: File[]) {
+  const form = new FormData();
+  for (const f of files) form.append("files", f);
+  return req<{ uploaded: number; total: number }>("/doctors/me/certifications", {
+    method: "POST",
+    body: form,
+  });
 }
 
 export async function login(email: string, password: string) {
@@ -343,6 +356,44 @@ export interface QueueHealth {
   pending_in_broker: number;
 }
 
+export interface AdminDiagnosisDetail {
+  id: string;
+  patient_id: string;
+  patient_name: string | null;
+  patient_email: string | null;
+  modality: string | null;
+  status: string;
+  model_used: string | null;
+  confidence_score: number | null;
+  urgency: string | null;
+  image_keys: string[];
+  report: {
+    summary?: string;
+    findings?: string[];
+    impression?: string;
+    differential_diagnoses?: string[];
+    recommendations?: string[];
+    urgency?: string;
+    patient_notes?: string;
+    error?: string;
+  } | null;
+  doctor_notes: string | null;
+  created_at: string;
+  updated_at: string;
+  doctor_reviewed_at: string | null;
+}
+
+export interface AuditLogItem {
+  id: string;
+  actor_id: string;
+  actor_email: string;
+  action: string;
+  target_type: string;
+  target_id: string;
+  meta: Record<string, unknown> | null;
+  created_at: string;
+}
+
 export async function adminGetOverview() {
   return req<OverviewStats>("/admin/stats/overview");
 }
@@ -404,6 +455,21 @@ export async function adminGetQueueHealth() {
   return req<QueueHealth>("/admin/queue/health");
 }
 
+export async function adminGetDiagnosis(id: string) {
+  return req<AdminDiagnosisDetail>(`/admin/diagnoses/${id}`);
+}
+
+export async function adminGetAuditLogs(params?: { page?: number; page_size?: number; action?: string }) {
+  const q = new URLSearchParams();
+  if (params?.page) q.set("page", String(params.page));
+  if (params?.page_size) q.set("page_size", String(params.page_size));
+  if (params?.action) q.set("action", params.action);
+  const qs = q.toString();
+  return req<{ entries: AuditLogItem[]; total: number; page: number; page_size: number }>(
+    `/admin/audit-logs${qs ? `?${qs}` : ""}`,
+  );
+}
+
 // ── doctor: linked patients ───────────────────────────────────────────────────
 
 export async function listMyPatients() {
@@ -423,5 +489,89 @@ export async function messageDoctorPatient(patientId: string, message: string) {
   return req<void>(`/doctor/message/patient/${patientId}`, {
     method: "POST",
     body: JSON.stringify({ message }),
+  });
+}
+
+// ── admin: doctor registration review ────────────────────────────────────────
+
+export interface AdminDoctorItem {
+  id: string;
+  user_id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  specialty: string | null;
+  license_number: string | null;
+  qualifications: string[];
+  other_qualifications: string | null;
+  registration_status: "pending_review" | "approved" | "rejected";
+  is_verified: boolean;
+  created_at: string;
+  reviewed_at: string | null;
+}
+
+export interface AdminDoctorDetail extends AdminDoctorItem {
+  certification_urls: string[];
+  rejection_reason: string | null;
+  is_available: boolean;
+  updated_at: string;
+}
+
+export async function adminListDoctors(params?: { page?: number; status?: string }) {
+  const q = new URLSearchParams();
+  if (params?.page) q.set("page", String(params.page));
+  if (params?.status) q.set("status", params.status);
+  const qs = q.toString();
+  return req<{ doctors: AdminDoctorItem[]; total: number; page: number; page_size: number }>(
+    `/admin/doctors${qs ? `?${qs}` : ""}`,
+  );
+}
+
+export async function adminGetDoctor(id: string) {
+  return req<AdminDoctorDetail>(`/admin/doctors/${id}`);
+}
+
+export async function adminApproveDoctor(id: string) {
+  return req<{ approved: boolean }>(`/admin/doctors/${id}/approve`, { method: "POST" });
+}
+
+export async function adminRejectDoctor(id: string, reason: string) {
+  return req<{ rejected: boolean }>(`/admin/doctors/${id}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export async function adminBanUser(id: string) {
+  return req<{ id: string; is_active: boolean }>(`/admin/users/${id}/ban`, { method: "POST" });
+}
+
+export async function adminUnbanUser(id: string) {
+  return req<{ id: string; is_active: boolean }>(`/admin/users/${id}/unban`, { method: "POST" });
+}
+
+export async function adminDeleteUser(id: string) {
+  return req<void>(`/admin/users/${id}`, { method: "DELETE" });
+}
+
+export async function deleteMyAccount() {
+  // role-specific endpoint is called by the auth context based on role
+  return req<void>(`/patients/me`, { method: "DELETE" });
+}
+
+export async function deleteMyDoctorAccount() {
+  return req<void>(`/doctors/me`, { method: "DELETE" });
+}
+
+export async function registerAdmin(data: {
+  email: string;
+  password: string;
+  first_name: string;
+  last_name: string;
+  invite_code: string;
+}) {
+  return req<{ user_id: string; email: string; role: string }>(`/auth/admin/register`, {
+    method: "POST",
+    body: JSON.stringify(data),
   });
 }

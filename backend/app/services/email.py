@@ -1,16 +1,14 @@
-"""Email notification service — SSL/SMTP (port 465).
+"""Email notification service — Resend API.
 
 All public functions are synchronous so they can be called directly from
 Celery workers and wrapped in asyncio.to_thread() from async FastAPI routes.
-They no-op gracefully when SMTP_HOST is not configured.
+They no-op gracefully when RESEND_API_KEY is not configured.
 """
 
 import logging
-import smtplib
-import ssl
 from datetime import datetime
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+
+import resend
 
 from app.core.config import settings
 
@@ -66,26 +64,26 @@ def _send(
     bcc: str | None = None,
     reply_to: str | None = None,
 ) -> None:
-    """Core send over SSL. Silently skips when SMTP_HOST is not set."""
-    if not settings.SMTP_HOST:
-        logger.debug("SMTP not configured — skipping email '%s' to %s", subject, to)
+    """Send via Resend API. Silently skips when RESEND_API_KEY is not set."""
+    if not settings.RESEND_API_KEY:
+        logger.debug("Resend not configured — skipping email '%s' to %s", subject, to)
         return
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = settings.SMTP_FROM
-    msg["To"] = to
-    if reply_to:
-        msg["Reply-To"] = reply_to
-    msg.attach(MIMEText(html, "html"))
+    resend.api_key = settings.RESEND_API_KEY
 
-    recipients = [to] + ([bcc] if bcc else [])
+    params: resend.Emails.SendParams = {
+        "from": settings.SMTP_FROM,
+        "to": [to],
+        "subject": subject,
+        "html": html,
+    }
+    if bcc:
+        params["bcc"] = [bcc]
+    if reply_to:
+        params["reply_to"] = [reply_to]
 
     try:
-        ctx = ssl.create_default_context()
-        with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, context=ctx) as server:
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(settings.SMTP_FROM, recipients, msg.as_string())
+        resend.Emails.send(params)
         logger.info("Email sent — to=%s subject=%r", to, subject)
     except Exception:
         logger.exception("Failed to send email — to=%s subject=%r", to, subject)

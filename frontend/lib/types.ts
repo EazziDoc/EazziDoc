@@ -31,6 +31,10 @@ export interface DoctorProfile {
   license_number: string | null;
   is_verified: boolean;
   is_available: boolean;
+  qualifications: string[];
+  other_qualifications: string | null;
+  registration_status: "pending_review" | "approved" | "rejected";
+  rejection_reason: string | null;
 }
 
 export interface DiagnosisReport {
@@ -81,4 +85,33 @@ export interface ImageUploadItem {
 export interface BatchUploadResponse {
   uploaded: ImageUploadItem[];
   total: number;
+}
+
+export interface AuditLogItem {
+  id: string;
+  actor_id: string;
+  actor_email: string;
+  action: string;
+  target_type: string;
+  target_id: string;
+  meta: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface AdminDiagnosisDetail {
+  id: string;
+  patient_id: string;
+  patient_name: string | null;
+  patient_email: string | null;
+  modality: string | null;
+  status: string;
+  model_used: string | null;
+  confidence_score: number | null;
+  urgency: string | null;
+  image_keys: string[];
+  report: DiagnosisReport | null;
+  doctor_notes: string | null;
+  created_at: string;
+  updated_at: string;
+  doctor_reviewed_at: string | null;
 }

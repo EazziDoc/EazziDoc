@@ -20,8 +20,13 @@ from app.models.doctor import Doctor
 from app.models.patient import Patient
 from app.models.user import User
 from app.schemas.admin import (
+    AdminDiagnosisDetail,
     AdminDiagnosisItem,
     AdminDiagnosisList,
+    AdminDoctorDetail,
+    AdminDoctorItem,
+    AdminDoctorList,
+    AdminDoctorReviewRequest,
     AdminUserDetail,
     AdminUserItem,
     AdminUserList,
@@ -39,6 +44,7 @@ from app.schemas.admin import (
     WorkerInfo,
 )
 from app.services.audit import log_action
+from app.services.storage import storage_service
 from app.workers.tasks import process_diagnosis
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -451,6 +457,92 @@ async def update_user(
     return await get_user(user_id, current_admin, db)
 
 
+@router.post("/users/{user_id}/ban", status_code=status.HTTP_200_OK)
+async def ban_user(
+    user_id: uuid.UUID,
+    current_admin: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Deny platform access for a patient or doctor (sets is_active=False)."""
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    if user.id == current_admin.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot ban your own account")
+    if user.role == "admin":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot ban another admin")
+    if not user.is_active:
+        raise HTTPException(status.HTTP_409_CONFLICT, "User is already banned")
+
+    user.is_active = False
+    await log_action(
+        db,
+        actor=current_admin,
+        action="user.banned",
+        target_type="user",
+        target_id=user_id,
+        meta={"target_email": user.email, "target_role": user.role},
+    )
+    admin_actions_total.labels(action="user.banned").inc()
+    await db.commit()
+    return {"id": str(user_id), "is_active": False}
+
+
+@router.post("/users/{user_id}/unban", status_code=status.HTTP_200_OK)
+async def unban_user(
+    user_id: uuid.UUID,
+    current_admin: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Restore platform access for a banned user."""
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    if user.is_active:
+        raise HTTPException(status.HTTP_409_CONFLICT, "User is already active")
+
+    user.is_active = True
+    await log_action(
+        db,
+        actor=current_admin,
+        action="user.unbanned",
+        target_type="user",
+        target_id=user_id,
+        meta={"target_email": user.email, "target_role": user.role},
+    )
+    admin_actions_total.labels(action="user.unbanned").inc()
+    await db.commit()
+    return {"id": str(user_id), "is_active": True}
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(
+    user_id: uuid.UUID,
+    current_admin: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permanently delete a user and all their data. Diagnosis records are retained."""
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    if user.id == current_admin.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot delete your own account")
+    if user.role == "admin":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot delete another admin")
+
+    await log_action(
+        db,
+        actor=current_admin,
+        action="user.deleted",
+        target_type="user",
+        target_id=user_id,
+        meta={"target_email": user.email, "target_role": user.role},
+    )
+    admin_actions_total.labels(action="user.deleted").inc()
+    await db.delete(user)
+    await db.commit()
+
+
 # ── diagnosis management ───────────────────────────────────────────────────────
 
 
@@ -510,6 +602,45 @@ async def list_diagnoses(
     ]
 
     return AdminDiagnosisList(diagnoses=items, total=total, page=page, page_size=page_size)
+
+
+@router.get("/diagnoses/{diagnosis_id}", response_model=AdminDiagnosisDetail)
+async def get_diagnosis(
+    diagnosis_id: uuid.UUID,
+    _: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    dx = (
+        await db.execute(select(Diagnosis).where(Diagnosis.id == diagnosis_id))
+    ).scalar_one_or_none()
+    if not dx:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Diagnosis not found")
+
+    patient_name = patient_email = None
+    pt = (await db.execute(select(Patient).where(Patient.id == dx.patient_id))).scalar_one_or_none()
+    if pt:
+        patient_name = f"{pt.first_name} {pt.last_name}"
+        u = (await db.execute(select(User).where(User.id == pt.user_id))).scalar_one_or_none()
+        if u:
+            patient_email = u.email
+
+    return AdminDiagnosisDetail(
+        id=dx.id,
+        patient_id=dx.patient_id,
+        patient_name=patient_name,
+        patient_email=patient_email,
+        modality=dx.modality,
+        status=dx.status,
+        model_used=dx.model_used,
+        confidence_score=dx.confidence_score,
+        urgency=dx.report.get("urgency") if isinstance(dx.report, dict) else None,
+        image_keys=dx.image_keys or [],
+        report=dx.report if isinstance(dx.report, dict) else None,
+        doctor_notes=dx.doctor_notes,
+        created_at=dx.created_at,
+        updated_at=dx.updated_at,
+        doctor_reviewed_at=dx.doctor_reviewed_at,
+    )
 
 
 @router.post("/diagnoses/{diagnosis_id}/requeue", status_code=status.HTTP_202_ACCEPTED)
@@ -646,3 +777,167 @@ async def list_audit_logs(
         page=page,
         page_size=page_size,
     )
+
+
+# ── doctor registration review ────────────────────────────────────────────────
+
+
+@router.get("/doctors", response_model=AdminDoctorList)
+async def list_doctors(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    status_filter: str | None = Query(default=None, alias="status"),
+    _: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    q = select(Doctor)
+    if status_filter:
+        q = q.where(Doctor.registration_status == status_filter)
+
+    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
+    doctors = (
+        (
+            await db.execute(
+                q.order_by(Doctor.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    user_ids = [d.user_id for d in doctors]
+    user_email_map: dict[uuid.UUID, str] = {}
+    if user_ids:
+        users = (await db.execute(select(User).where(User.id.in_(user_ids)))).scalars().all()
+        user_email_map = {u.id: u.email for u in users}
+
+    items = [
+        AdminDoctorItem(
+            id=d.id,
+            user_id=d.user_id,
+            email=user_email_map.get(d.user_id, ""),
+            first_name=d.first_name,
+            last_name=d.last_name,
+            specialty=d.specialty,
+            license_number=d.license_number,
+            qualifications=d.qualifications or [],
+            other_qualifications=d.other_qualifications,
+            registration_status=d.registration_status,
+            is_verified=d.is_verified,
+            created_at=d.created_at,
+            reviewed_at=d.reviewed_at,
+        )
+        for d in doctors
+    ]
+    return AdminDoctorList(doctors=items, total=total, page=page, page_size=page_size)
+
+
+@router.get("/doctors/{doctor_id}", response_model=AdminDoctorDetail)
+async def get_doctor(
+    doctor_id: uuid.UUID,
+    _: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    doctor = (await db.execute(select(Doctor).where(Doctor.id == doctor_id))).scalar_one_or_none()
+    if not doctor:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Doctor not found")
+
+    user = (await db.execute(select(User).where(User.id == doctor.user_id))).scalar_one_or_none()
+    email = user.email if user else ""
+
+    cert_urls: list[str] = []
+    for key in doctor.certification_keys or []:
+        try:
+            url = await storage_service.presigned_url(key, expires_in=3600)
+            cert_urls.append(url)
+        except Exception:
+            cert_urls.append("")
+
+    return AdminDoctorDetail(
+        id=doctor.id,
+        user_id=doctor.user_id,
+        email=email,
+        first_name=doctor.first_name,
+        last_name=doctor.last_name,
+        specialty=doctor.specialty,
+        license_number=doctor.license_number,
+        qualifications=doctor.qualifications or [],
+        other_qualifications=doctor.other_qualifications,
+        certification_urls=cert_urls,
+        registration_status=doctor.registration_status,
+        rejection_reason=doctor.rejection_reason,
+        is_verified=doctor.is_verified,
+        is_available=doctor.is_available,
+        created_at=doctor.created_at,
+        updated_at=doctor.updated_at,
+        reviewed_at=doctor.reviewed_at,
+    )
+
+
+@router.post("/doctors/{doctor_id}/approve", status_code=status.HTTP_200_OK)
+async def approve_doctor(
+    doctor_id: uuid.UUID,
+    current_admin: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    doctor = (await db.execute(select(Doctor).where(Doctor.id == doctor_id))).scalar_one_or_none()
+    if not doctor:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Doctor not found")
+    if doctor.registration_status == "approved":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Doctor registration is already approved")
+
+    doctor.registration_status = "approved"
+    doctor.is_verified = True
+    doctor.reviewed_at = _now()
+    doctor.rejection_reason = None
+
+    user = (await db.execute(select(User).where(User.id == doctor.user_id))).scalar_one_or_none()
+    if user:
+        user.is_verified = True
+
+    await log_action(
+        db,
+        actor=current_admin,
+        action="doctor.registration_approved",
+        target_type="doctor",
+        target_id=doctor_id,
+        meta={"doctor_email": user.email if user else None},
+    )
+    admin_actions_total.labels(action="doctor.registration_approved").inc()
+    await db.commit()
+    return {"approved": True, "doctor_id": str(doctor_id)}
+
+
+@router.post("/doctors/{doctor_id}/reject", status_code=status.HTTP_200_OK)
+async def reject_doctor(
+    doctor_id: uuid.UUID,
+    body: AdminDoctorReviewRequest,
+    current_admin: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    doctor = (await db.execute(select(Doctor).where(Doctor.id == doctor_id))).scalar_one_or_none()
+    if not doctor:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Doctor not found")
+    if doctor.registration_status == "rejected":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Doctor registration is already rejected")
+    if not body.reason:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "A rejection reason is required")
+
+    doctor.registration_status = "rejected"
+    doctor.is_verified = False
+    doctor.reviewed_at = _now()
+    doctor.rejection_reason = body.reason
+
+    user = (await db.execute(select(User).where(User.id == doctor.user_id))).scalar_one_or_none()
+
+    await log_action(
+        db,
+        actor=current_admin,
+        action="doctor.registration_rejected",
+        target_type="doctor",
+        target_id=doctor_id,
+        meta={"reason": body.reason, "doctor_email": user.email if user else None},
+    )
+    admin_actions_total.labels(action="doctor.registration_rejected").inc()
+    await db.commit()
+    return {"rejected": True, "doctor_id": str(doctor_id)}

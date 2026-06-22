@@ -23,6 +23,7 @@ from app.models.patient import Patient
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.schemas.auth import (
+    AdminRegisterRequest,
     LoginRequest,
     RegisterRequest,
     RegisterResponse,
@@ -69,7 +70,18 @@ async def register(request: Request, body: RegisterRequest, db: AsyncSession = D
     if body.role == "patient":
         db.add(Patient(user_id=user.id, first_name=body.first_name, last_name=body.last_name))
     else:
-        db.add(Doctor(user_id=user.id, first_name=body.first_name, last_name=body.last_name))
+        db.add(
+            Doctor(
+                user_id=user.id,
+                first_name=body.first_name,
+                last_name=body.last_name,
+                specialty=body.specialty,
+                license_number=body.license_number,
+                qualifications=body.qualifications,
+                other_qualifications=body.other_qualifications,
+                registration_status="pending_review",
+            )
+        )
 
     await db.commit()
     registrations_total.labels(role=body.role).inc()
@@ -86,6 +98,46 @@ async def register(request: Request, body: RegisterRequest, db: AsyncSession = D
     except Exception:
         logger.exception("Welcome email failed for %s", body.email)
 
+    return RegisterResponse(user_id=str(user.id), email=user.email, role=user.role)
+
+
+@router.post(
+    "/admin/register",
+    response_model=RegisterResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+@limiter.limit("5/minute")
+async def register_admin(
+    request: Request,
+    body: AdminRegisterRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    if not settings.ADMIN_INVITE_CODE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin registration is disabled on this server",
+        )
+    if body.invite_code != settings.ADMIN_INVITE_CODE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid invite code",
+        )
+
+    existing = await db.execute(select(User).where(User.email == body.email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+
+    user = User(
+        email=body.email,
+        password_hash=hash_password(body.password),
+        role="admin",
+        is_verified=True,
+    )
+    db.add(user)
+    await db.commit()
+    registrations_total.labels(role="admin").inc()
+
+    logger.info("New admin account created: %s", body.email)
     return RegisterResponse(user_id=str(user.id), email=user.email, role=user.role)
 
 
