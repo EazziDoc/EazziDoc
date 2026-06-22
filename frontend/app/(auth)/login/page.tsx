@@ -74,6 +74,12 @@ export default function LoginPage() {
           Register
         </Link>
       </p>
+      <p className="mt-2 text-center text-xs text-gray-400">
+        Admin?{" "}
+        <Link href="/admin/login" className="text-gray-500 hover:underline">
+          Use the admin portal
+        </Link>
+      </p>
     </Card>
   );
 }

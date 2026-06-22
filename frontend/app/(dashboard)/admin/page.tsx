@@ -7,7 +7,7 @@ import {
   adminGetDiagnosisStats,
   adminGetOverview,
 } from "@/lib/api";
-import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 
 function KpiCard({
   label,
@@ -136,6 +136,7 @@ export default function AdminOverviewPage() {
             { href: "/admin/users", label: "Manage users" },
             { href: "/admin/diagnoses", label: "Browse diagnoses" },
             { href: "/admin/queue", label: "Queue health" },
+            { href: "/admin/audit-logs", label: "Audit logs" },
           ].map((l) => (
             <Link
               key={l.href}

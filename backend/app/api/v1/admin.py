@@ -20,6 +20,7 @@ from app.models.doctor import Doctor
 from app.models.patient import Patient
 from app.models.user import User
 from app.schemas.admin import (
+    AdminDiagnosisDetail,
     AdminDiagnosisItem,
     AdminDiagnosisList,
     AdminUserDetail,
@@ -510,6 +511,45 @@ async def list_diagnoses(
     ]
 
     return AdminDiagnosisList(diagnoses=items, total=total, page=page, page_size=page_size)
+
+
+@router.get("/diagnoses/{diagnosis_id}", response_model=AdminDiagnosisDetail)
+async def get_diagnosis(
+    diagnosis_id: uuid.UUID,
+    _: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    dx = (
+        await db.execute(select(Diagnosis).where(Diagnosis.id == diagnosis_id))
+    ).scalar_one_or_none()
+    if not dx:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Diagnosis not found")
+
+    patient_name = patient_email = None
+    pt = (await db.execute(select(Patient).where(Patient.id == dx.patient_id))).scalar_one_or_none()
+    if pt:
+        patient_name = f"{pt.first_name} {pt.last_name}"
+        u = (await db.execute(select(User).where(User.id == pt.user_id))).scalar_one_or_none()
+        if u:
+            patient_email = u.email
+
+    return AdminDiagnosisDetail(
+        id=dx.id,
+        patient_id=dx.patient_id,
+        patient_name=patient_name,
+        patient_email=patient_email,
+        modality=dx.modality,
+        status=dx.status,
+        model_used=dx.model_used,
+        confidence_score=dx.confidence_score,
+        urgency=dx.report.get("urgency") if isinstance(dx.report, dict) else None,
+        image_keys=dx.image_keys or [],
+        report=dx.report if isinstance(dx.report, dict) else None,
+        doctor_notes=dx.doctor_notes,
+        created_at=dx.created_at,
+        updated_at=dx.updated_at,
+        doctor_reviewed_at=dx.doctor_reviewed_at,
+    )
 
 
 @router.post("/diagnoses/{diagnosis_id}/requeue", status_code=status.HTTP_202_ACCEPTED)
