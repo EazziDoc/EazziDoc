@@ -35,12 +35,18 @@ class Settings(BaseSettings):
     @field_validator("REDIS_URL", mode="before")
     @classmethod
     def fix_redis_url(cls, v: str) -> str:
-        # Upstash on Fly.io uses rediss:// (TLS). redis-py requires ssl_cert_reqs
-        # to be set explicitly — baking it into the URL survives reconnections.
-        if v.startswith("rediss://") and "ssl_cert_reqs" not in v:
-            sep = "&" if "?" in v else "?"
-            v = f"{v}{sep}ssl_cert_reqs=none"
-        return v
+        # Upstash on Fly.io uses rediss:// (TLS). redis-py's URL parser maps
+        # ssl_cert_reqs via {"none": ssl.CERT_NONE, ...} — uppercase "CERT_NONE"
+        # causes a KeyError. Always strip and re-add the correct lowercase value
+        # so a wrongly-set Fly secret can't break auth.
+        if not v.startswith("rediss://"):
+            return v
+        from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+        parsed = urlparse(v)
+        params = {k: vs[0] for k, vs in parse_qs(parsed.query).items()}
+        params["ssl_cert_reqs"] = "none"  # always correct; redis-py needs lowercase
+        return urlunparse(parsed._replace(query=urlencode(params)))
 
     # Auth
     SECRET_KEY: str

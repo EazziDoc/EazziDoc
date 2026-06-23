@@ -20,7 +20,6 @@ from app.schemas.diagnosis import (
     DoctorReviewRequest,
 )
 from app.services import email as email_svc
-from app.workers.tasks import process_diagnosis
 
 logger = logging.getLogger(__name__)
 
@@ -108,19 +107,7 @@ async def create_diagnosis(
     db.add(diagnosis)
     await db.commit()
     await db.refresh(diagnosis)
-
-    try:
-        process_diagnosis.delay(str(diagnosis.id))
-    except Exception:
-        logger.exception("Failed to queue diagnosis %s — Celery/Redis unavailable", diagnosis.id)
-        diagnosis.status = "failed"
-        await db.commit()
-        # Must refresh: the second commit sets updated_at server-side via onupdate.
-        # Without this, FastAPI lazy-loads the attribute during response serialisation,
-        # which raises MissingGreenlet → ExceptionGroup through Starlette middleware
-        # → connection closed before CORS headers are written.
-        await db.refresh(diagnosis)
-
+    # Polling worker picks this up automatically — no Redis/Celery call needed.
     return diagnosis
 
 
@@ -225,14 +212,7 @@ async def doctor_create_diagnosis(
     db.add(diagnosis)
     await db.commit()
     await db.refresh(diagnosis)
-
-    try:
-        process_diagnosis.delay(str(diagnosis.id))
-    except Exception:
-        logger.exception("Failed to queue diagnosis %s — Celery/Redis unavailable", diagnosis.id)
-        diagnosis.status = "failed"
-        await db.commit()
-        await db.refresh(diagnosis)
+    # Polling worker picks this up automatically — no Redis/Celery call needed.
 
     if patient_user:
         try:
