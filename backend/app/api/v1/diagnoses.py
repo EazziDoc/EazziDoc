@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -11,8 +13,16 @@ from app.models.diagnosis import Diagnosis
 from app.models.doctor import Doctor
 from app.models.patient import Patient
 from app.models.user import User
-from app.schemas.diagnosis import DiagnosisCreate, DiagnosisResponse, DoctorReviewRequest
+from app.schemas.diagnosis import (
+    DiagnosisCreate,
+    DiagnosisResponse,
+    DoctorPatientView,
+    DoctorReviewRequest,
+)
+from app.services import email as email_svc
 from app.workers.tasks import process_diagnosis
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/diagnoses", tags=["diagnoses"])
 
@@ -20,13 +30,21 @@ router = APIRouter(prefix="/diagnoses", tags=["diagnoses"])
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 
-async def _get_patient(db: AsyncSession, user_id) -> Patient:
+async def _get_patient_by_user(db: AsyncSession, user_id) -> Patient:
     result = await db.execute(select(Patient).where(Patient.user_id == user_id))
     patient = result.scalar_one_or_none()
     if not patient:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Patient profile not found"
         )
+    return patient
+
+
+async def _get_patient_by_id(db: AsyncSession, patient_id: str) -> Patient:
+    result = await db.execute(select(Patient).where(Patient.id == patient_id))
+    patient = result.scalar_one_or_none()
+    if not patient:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found")
     return patient
 
 
@@ -38,6 +56,21 @@ async def _owned_diagnosis(db: AsyncSession, diagnosis_id, patient_id) -> Diagno
     if not dx:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Diagnosis not found")
     return dx
+
+
+async def _get_verified_doctor(db: AsyncSession, current_user: User) -> Doctor:
+    result = await db.execute(select(Doctor).where(Doctor.user_id == current_user.id))
+    doctor = result.scalar_one_or_none()
+    if not doctor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Doctor profile not found"
+        )
+    if not doctor.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Doctor account is not yet verified by admin",
+        )
+    return doctor
 
 
 # ── patient: create ───────────────────────────────────────────────────────────
@@ -57,9 +90,7 @@ async def create_diagnosis(
     Pass the `image_keys` returned by POST /uploads/images.
     The AI pipeline runs asynchronously — poll GET /diagnoses/{id} for results.
     """
-    patient = await _get_patient(db, current_user.id)
-
-    # Store patient notes inside the report dict until AI overwrites it
+    patient = await _get_patient_by_user(db, current_user.id)
     initial_report = {"patient_notes": body.patient_notes} if body.patient_notes else {}
 
     diagnosis = Diagnosis(
@@ -67,12 +98,12 @@ async def create_diagnosis(
         image_keys=body.image_keys,
         status="pending",
         report=initial_report,
+        uploaded_by_role="patient",
     )
     db.add(diagnosis)
     await db.commit()
     await db.refresh(diagnosis)
 
-    # Queue async AI processing — fire and forget
     process_diagnosis.delay(str(diagnosis.id))
 
     return diagnosis
@@ -86,7 +117,7 @@ async def list_diagnoses(
     current_user: User = Depends(require_role("patient")),
     db: AsyncSession = Depends(get_db),
 ):
-    patient = await _get_patient(db, current_user.id)
+    patient = await _get_patient_by_user(db, current_user.id)
     result = await db.execute(
         select(Diagnosis)
         .where(Diagnosis.patient_id == patient.id)
@@ -95,10 +126,7 @@ async def list_diagnoses(
     return result.scalars().all()
 
 
-# ── patient: single ───────────────────────────────────────────────────────────
-
-
-# ── doctor: list pending reviews — must come BEFORE /{diagnosis_id} ──────────
+# ── doctor: pending review queue — must come BEFORE /{diagnosis_id} ──────────
 
 
 @router.get("/queue/pending", response_model=list[DiagnosisResponse])
@@ -116,6 +144,104 @@ async def doctor_pending_queue(
     return result.scalars().all()
 
 
+# ── doctor: upload scan for a patient ─────────────────────────────────────────
+
+
+@router.post(
+    "/doctor/patients/{patient_id}",
+    response_model=DiagnosisResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def doctor_create_diagnosis(
+    patient_id: str,
+    body: DiagnosisCreate,
+    current_user: User = Depends(require_role("doctor")),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Doctor uploads a scan on behalf of a patient.
+    Images must be pre-uploaded via POST /uploads/images.
+    Passes through the same AI pipeline; the doctor reviews the AI report and
+    can add clinical notes, a treatment plan, or a referral.
+    The patient receives an email notification.
+    """
+    doctor = await _get_verified_doctor(db, current_user)
+    patient = await _get_patient_by_id(db, patient_id)
+
+    patient_user = (
+        await db.execute(select(User).where(User.id == patient.user_id))
+    ).scalar_one_or_none()
+
+    initial_report = {"patient_notes": body.patient_notes} if body.patient_notes else {}
+
+    diagnosis = Diagnosis(
+        patient_id=patient.id,
+        image_keys=body.image_keys,
+        status="pending",
+        report=initial_report,
+        uploaded_by_role="doctor",
+        uploading_doctor_id=doctor.id,
+    )
+    db.add(diagnosis)
+    await db.commit()
+    await db.refresh(diagnosis)
+
+    process_diagnosis.delay(str(diagnosis.id))
+
+    if patient_user:
+        try:
+            asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: email_svc.send_doctor_scan_uploaded(
+                    patient_email=patient_user.email,
+                    patient_name=patient.first_name,
+                    doctor_name=f"{doctor.first_name} {doctor.last_name}",
+                ),
+            )
+        except Exception:
+            logger.exception("Doctor scan upload notification failed for patient %s", patient.id)
+
+    return diagnosis
+
+
+# ── doctor: patient detail + diagnosis history ────────────────────────────────
+
+
+@router.get("/doctor/patients/{patient_id}", response_model=DoctorPatientView)
+async def doctor_get_patient(
+    patient_id: str,
+    current_user: User = Depends(require_role("doctor")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a patient's profile and their full diagnosis history for doctor review."""
+    await _get_verified_doctor(db, current_user)
+    patient = await _get_patient_by_id(db, patient_id)
+
+    diagnoses = (
+        (
+            await db.execute(
+                select(Diagnosis)
+                .where(Diagnosis.patient_id == patient.id)
+                .order_by(Diagnosis.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return DoctorPatientView(
+        id=patient.id,
+        first_name=patient.first_name,
+        last_name=patient.last_name,
+        date_of_birth=patient.date_of_birth,
+        gender=patient.gender,
+        phone=patient.phone,
+        country=patient.country,
+        identity_verification_status=patient.identity_verification_status,
+        diagnoses=list(diagnoses),
+    )
+
+
 # ── patient: single ───────────────────────────────────────────────────────────
 
 
@@ -125,7 +251,7 @@ async def get_diagnosis(
     current_user: User = Depends(require_role("patient")),
     db: AsyncSession = Depends(get_db),
 ):
-    patient = await _get_patient(db, current_user.id)
+    patient = await _get_patient_by_user(db, current_user.id)
     return await _owned_diagnosis(db, diagnosis_id, patient.id)
 
 
@@ -139,12 +265,7 @@ async def review_diagnosis(
     current_user: User = Depends(require_role("doctor")),
     db: AsyncSession = Depends(get_db),
 ):
-    doctor_result = await db.execute(select(Doctor).where(Doctor.user_id == current_user.id))
-    doctor = doctor_result.scalar_one_or_none()
-    if not doctor:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Doctor profile not found"
-        )
+    doctor = await _get_verified_doctor(db, current_user)
 
     result = await db.execute(select(Diagnosis).where(Diagnosis.id == diagnosis_id))
     dx = result.scalar_one_or_none()
@@ -155,6 +276,11 @@ async def review_diagnosis(
     dx.doctor_notes = body.notes
     dx.status = body.status
     dx.doctor_reviewed_at = datetime.now(UTC)
+    if body.treatment_plan is not None:
+        dx.treatment_plan = body.treatment_plan
+    if body.referral is not None:
+        dx.referral = body.referral
+
     await db.commit()
     await db.refresh(dx)
     return dx

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import { useState } from "react";
 import { listMyPatients, messageDoctorPatient } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -79,21 +80,29 @@ export default function MyPatientsPage() {
                     <td className="px-6 py-4 text-gray-500">{p.country ?? "—"}</td>
                     <td className="px-6 py-4 text-gray-500">{p.phone ?? "—"}</td>
                     <td className="px-6 py-4 text-right">
-                      {sent === p.id ? (
-                        <span className="text-xs text-green-600 font-medium">Message sent ✓</span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveId(activeId === p.id ? null : p.id);
-                            setMessage("");
-                            setError("");
-                          }}
+                      <div className="flex items-center justify-end gap-4">
+                        <Link
+                          href={`/doctor/patients/${p.id}`}
                           className="text-xs text-primary-600 font-medium hover:underline"
                         >
-                          {activeId === p.id ? "Cancel" : "Send message"}
-                        </button>
-                      )}
+                          View →
+                        </Link>
+                        {sent === p.id ? (
+                          <span className="text-xs text-green-600 font-medium">Sent ✓</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveId(activeId === p.id ? null : p.id);
+                              setMessage("");
+                              setError("");
+                            }}
+                            className="text-xs text-gray-500 font-medium hover:underline"
+                          >
+                            {activeId === p.id ? "Cancel" : "Message"}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
 

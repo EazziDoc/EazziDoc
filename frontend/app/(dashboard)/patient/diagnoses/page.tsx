@@ -60,9 +60,14 @@ export default function DiagnosesPage() {
                   </td>
                   <td className="px-6 py-4 text-gray-500">{d.image_keys.length}</td>
                   <td className="px-6 py-4">
-                    <Badge className={statusColor(d.status)}>
-                      {d.status.replace("_", " ")}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge className={statusColor(d.status)}>
+                        {d.status.replace("_", " ")}
+                      </Badge>
+                      {d.uploaded_by_role === "doctor" && (
+                        <Badge className="bg-violet-100 text-violet-700">Doctor upload</Badge>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4 text-right">
                     <Link

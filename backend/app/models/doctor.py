@@ -44,5 +44,10 @@ class Doctor(Base):
     )
 
     user: Mapped["User"] = relationship(back_populates="doctor")
-    reviews: Mapped[list["Diagnosis"]] = relationship(back_populates="reviewing_doctor")
+    reviews: Mapped[list["Diagnosis"]] = relationship(
+        "Diagnosis", foreign_keys="Diagnosis.reviewing_doctor_id", back_populates="reviewing_doctor"
+    )
+    uploaded_diagnoses: Mapped[list["Diagnosis"]] = relationship(
+        "Diagnosis", foreign_keys="Diagnosis.uploading_doctor_id", back_populates="uploading_doctor"
+    )
     appointments: Mapped[list["Appointment"]] = relationship(back_populates="doctor")
