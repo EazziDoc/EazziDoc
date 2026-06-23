@@ -19,9 +19,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.core.config import settings
 from app.models.diagnosis import Diagnosis
 
-# Re-use the pipeline function directly — no Celery/Redis involved.
-from app.workers.tasks import _run_pipeline
-
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = 5  # seconds between polls when the queue is empty
@@ -36,19 +33,26 @@ async def _reset_stuck_processing() -> None:
     Diagnoses get stuck in 'processing' if the worker crashed mid-pipeline.
     Resetting them allows a fresh attempt on the next poll.
     """
-    async with _SessionLocal() as db:
-        result = await db.execute(
-            update(Diagnosis)
-            .where(Diagnosis.status == "processing")
-            .values(status="pending")
-            .returning(Diagnosis.id)
-        )
-        stuck_ids = [str(r[0]) for r in result.fetchall()]
-        await db.commit()
-    if stuck_ids:
-        logger.warning(
-            "Reset %d stuck 'processing' diagnoses to 'pending': %s", len(stuck_ids), stuck_ids
-        )
+    try:
+        async with _SessionLocal() as db:
+            result = await db.execute(
+                update(Diagnosis)
+                .where(Diagnosis.status == "processing")
+                .values(status="pending")
+                .returning(Diagnosis.id)
+            )
+            stuck_ids = [str(r[0]) for r in result.fetchall()]
+            await db.commit()
+        if stuck_ids:
+            logger.warning(
+                "Reset %d stuck 'processing' diagnoses to 'pending': %s",
+                len(stuck_ids),
+                stuck_ids,
+            )
+        else:
+            logger.info("No stuck diagnoses found on startup")
+    except Exception:
+        logger.exception("Could not reset stuck diagnoses on startup — continuing anyway")
 
 
 async def _claim_one() -> str | None:
@@ -86,6 +90,13 @@ async def _mark_failed(diagnosis_id: str) -> None:
         logger.exception("Could not mark diagnosis %s as flagged", diagnosis_id)
 
 
+async def _run(diagnosis_id: str) -> None:
+    """Import and run the pipeline lazily so startup never fails due to an AI import error."""
+    from app.workers.tasks import _run_pipeline
+
+    await _run_pipeline(diagnosis_id)
+
+
 async def main() -> None:
     logger.info(
         "Polling worker started — polling DB for pending diagnoses every %ds", POLL_INTERVAL
@@ -98,7 +109,7 @@ async def main() -> None:
             if diagnosis_id:
                 logger.info("Claimed diagnosis %s — starting pipeline", diagnosis_id)
                 try:
-                    await _run_pipeline(diagnosis_id)
+                    await _run(diagnosis_id)
                 except Exception:
                     logger.exception("Pipeline crashed for diagnosis %s", diagnosis_id)
                     await _mark_failed(diagnosis_id)
