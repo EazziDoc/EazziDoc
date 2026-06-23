@@ -14,7 +14,7 @@ from app.core.metrics import diagnoses_total, diagnosis_pipeline_seconds
 from app.models.diagnosis import Diagnosis
 from app.models.patient import Patient
 from app.models.user import User
-from app.services.ai import gemini, groq_client
+from app.services.ai import gemini, groq_client, medsam, router
 from app.services.email import send_diagnosis_ready
 from app.services.storage import storage_service
 
@@ -62,17 +62,30 @@ async def _run_pipeline(diagnosis_id: str) -> None:
         modality = gemini.detect_modality(images)
         diagnosis.modality = modality
 
+        # ── specialist model (TorchXRayVision / RETFound / HAM10000) ─────────
+        primary_image_bytes = images[0][0]
+        specialist = await router.run_specialist(primary_image_bytes, modality)
+
+        # ── MedSAM segmentation overlay ───────────────────────────────────────
+        seg_key = await medsam.segment_and_upload(
+            primary_image_bytes, diagnosis_id, storage_service
+        )
+
         # ── report generation (Gemini → Groq fallback) ───────────────────────
         patient_notes = diagnosis.report.get("patient_notes") if diagnosis.report else None
 
-        report = gemini.generate_report(images, modality, patient_notes)
+        report = gemini.generate_report(images, modality, patient_notes, specialist)
         if not report:
             logger.warning("Gemini failed, falling back to Groq for diagnosis %s", diagnosis_id)
-            report = groq_client.generate_report(modality, patient_notes)
+            report = groq_client.generate_report(modality, patient_notes, specialist)
 
         if report:
-            diagnosis.model_used = "gemini-2.0-flash-exp" if report else "llama-3.3-70b-versatile"
+            diagnosis.model_used = "gemini-2.0-flash-exp"
             diagnosis.confidence_score = float(report.pop("confidence", 0.0))
+            if specialist:
+                report["specialist_model"] = specialist
+            if seg_key:
+                report["segmentation_key"] = seg_key
             diagnosis.report = report
             diagnosis.status = "ai_complete"
         else:

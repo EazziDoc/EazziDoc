@@ -41,6 +41,13 @@ export interface DoctorProfile {
   rejection_reason: string | null;
 }
 
+export interface SpecialistModel {
+  model: string;
+  top_finding: string;
+  top_confidence: number;
+  all_findings: Record<string, number>;
+}
+
 export interface DiagnosisReport {
   summary?: string;
   findings?: string[];
@@ -50,6 +57,8 @@ export interface DiagnosisReport {
   urgency?: "routine" | "urgent" | "emergent";
   patient_notes?: string;
   error?: string;
+  specialist_model?: SpecialistModel;
+  segmentation_key?: string;
 }
 
 export interface Diagnosis {

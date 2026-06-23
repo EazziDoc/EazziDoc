@@ -1,0 +1,70 @@
+# ── Celery ML worker — CPU-only build ────────────────────────────────────────
+# Separate from the web Dockerfile so ML deps don't bloat the API image.
+# CPU-only torch: ~180 MB runtime vs ~800 MB for the CUDA build.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── Stage 1: build ────────────────────────────────────────────────────────────
+FROM python:3.11-slim AS builder
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml .
+
+RUN pip install --no-cache-dir --upgrade pip
+
+# Step 1 — CPU-only PyTorch stack (must happen before anything that depends on
+# torch, otherwise pip resolves to the CUDA wheel and pulls 13 nvidia-* packages
+# + triton totalling ~3 GB).  torchvision is a direct dep of torchxrayvision.
+RUN pip install --no-cache-dir \
+        torch torchvision \
+        --index-url https://download.pytorch.org/whl/cpu
+
+# Step 2 — torchxrayvision + scikit-image + segment-anything.
+# torch/torchvision are already satisfied; pip will not reinstall them.
+RUN pip install --no-cache-dir \
+        torchxrayvision \
+        scikit-image \
+        segment-anything
+
+# Step 3 — rest of the application (FastAPI, Celery, DB drivers, etc.)
+# Using prod-no-ml so pip does not re-evaluate the ML group and accidentally
+# pull the CUDA wheel.
+RUN pip install --no-cache-dir -e ".[prod-no-ml]"
+
+
+# ── Stage 2: runtime ──────────────────────────────────────────────────────────
+FROM python:3.11-slim AS production
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    libpq5 \
+    # scikit-image / PIL runtime deps
+    libjpeg62-turbo \
+    zlib1g \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+COPY app/ ./app/
+COPY alembic/ ./alembic/
+COPY alembic.ini .
+
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+USER appuser
+
+# Single-concurrency worker — one diagnosis at a time to keep memory flat.
+# TorchXRayVision model is loaded once via @lru_cache and reused across tasks.
+CMD ["celery", "-A", "app.core.celery_app", "worker", \
+     "--loglevel=info", "--concurrency=1", \
+     "--queues=celery"]
