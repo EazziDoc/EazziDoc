@@ -40,7 +40,7 @@ Image modality: {modality}
 
 def _configure() -> genai.GenerativeModel:
     genai.configure(api_key=settings.GOOGLE_API_KEY)
-    return genai.GenerativeModel("gemini-2.0-flash-exp")
+    return genai.GenerativeModel("gemini-2.0-flash")
 
 
 def _image_part(image_bytes: bytes, content_type: str) -> dict:
