@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/input";
+import { ModalitySelector } from "@/components/ModalitySelector";
 import { formatDate, formatDateTime, statusColor } from "@/lib/utils";
 
 const urgencyColor: Record<string, string> = {
@@ -287,6 +288,7 @@ export default function DoctorPatientDetailPage() {
 
   const [showUpload, setShowUpload] = useState(false);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [uploadModality, setUploadModality] = useState<string | null>(null);
   const [uploadNotes, setUploadNotes] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -301,12 +303,14 @@ export default function DoctorPatientDetailPage() {
     mutationFn: (imageKeys: string[]) =>
       doctorCreateDiagnosis(patientId, {
         image_keys: imageKeys,
+        modality: uploadModality!,
         patient_notes: uploadNotes.trim() || undefined,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["doctor-patient", patientId] });
       setShowUpload(false);
       setUploadFiles([]);
+      setUploadModality(null);
       setUploadNotes("");
       setUploadError("");
     },
@@ -316,6 +320,10 @@ export default function DoctorPatientDetailPage() {
     e.preventDefault();
     if (!uploadFiles.length) {
       setUploadError("Select at least one image.");
+      return;
+    }
+    if (!uploadModality) {
+      setUploadError("Select an image type.");
       return;
     }
     setUploading(true);
@@ -429,6 +437,12 @@ export default function DoctorPatientDetailPage() {
             <CardTitle>Upload scan for {data.first_name}</CardTitle>
           </CardHeader>
           <form onSubmit={handleUploadSubmit} className="space-y-4">
+            <ModalitySelector
+              value={uploadModality}
+              onChange={setUploadModality}
+              disabled={uploading}
+            />
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Medical images (1–5 files, max 10 MB each)
@@ -484,7 +498,7 @@ export default function DoctorPatientDetailPage() {
               email.
             </p>
 
-            <Button type="submit" loading={uploading} disabled={!uploadFiles.length}>
+            <Button type="submit" loading={uploading} disabled={!uploadFiles.length || !uploadModality}>
               {uploading ? "Uploading…" : "Upload & start analysis"}
             </Button>
           </form>

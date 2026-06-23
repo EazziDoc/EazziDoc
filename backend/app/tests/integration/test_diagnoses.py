@@ -22,6 +22,7 @@ _DOCTOR = {
 }
 
 _IMAGE_KEYS = ["images/user-id/00000000-0000-0000-0000-000000000001.jpg"]
+_MODALITY = "chest_xray"
 
 
 async def _login(client: AsyncClient, user: dict) -> str:
@@ -42,7 +43,7 @@ async def test_create_diagnosis_returns_pending(client: AsyncClient):
     resp = await client.post(
         "/api/v1/diagnoses",
         headers={"Authorization": f"Bearer {token}"},
-        json={"image_keys": _IMAGE_KEYS},
+        json={"image_keys": _IMAGE_KEYS, "modality": _MODALITY},
     )
 
     assert resp.status_code == 202
@@ -69,7 +70,7 @@ async def test_create_diagnosis_with_patient_notes(client: AsyncClient):
 async def test_create_diagnosis_requires_auth(client: AsyncClient):
     resp = await client.post(
         "/api/v1/diagnoses",
-        json={"image_keys": _IMAGE_KEYS},
+        json={"image_keys": _IMAGE_KEYS, "modality": _MODALITY},
     )
     assert resp.status_code == 403
 
@@ -79,7 +80,7 @@ async def test_create_diagnosis_doctor_cannot_submit(client: AsyncClient):
     resp = await client.post(
         "/api/v1/diagnoses",
         headers={"Authorization": f"Bearer {token}"},
-        json={"image_keys": _IMAGE_KEYS},
+        json={"image_keys": _IMAGE_KEYS, "modality": _MODALITY},
     )
     assert resp.status_code == 403
 
@@ -113,7 +114,7 @@ async def test_list_diagnoses_returns_own_only(client: AsyncClient):
     await client.post(
         "/api/v1/diagnoses",
         headers={"Authorization": f"Bearer {token}"},
-        json={"image_keys": _IMAGE_KEYS},
+        json={"image_keys": _IMAGE_KEYS, "modality": _MODALITY},
     )
 
     resp = await client.get(
@@ -133,7 +134,7 @@ async def test_get_diagnosis_by_id(client: AsyncClient):
     create_resp = await client.post(
         "/api/v1/diagnoses",
         headers={"Authorization": f"Bearer {token}"},
-        json={"image_keys": _IMAGE_KEYS},
+        json={"image_keys": _IMAGE_KEYS, "modality": _MODALITY},
     )
     diagnosis_id = create_resp.json()["id"]
 
@@ -165,7 +166,7 @@ async def test_doctor_can_review_diagnosis(client: AsyncClient):
     create_resp = await client.post(
         "/api/v1/diagnoses",
         headers={"Authorization": f"Bearer {patient_token}"},
-        json={"image_keys": _IMAGE_KEYS},
+        json={"image_keys": _IMAGE_KEYS, "modality": _MODALITY},
     )
     diagnosis_id = create_resp.json()["id"]
 
@@ -187,7 +188,7 @@ async def test_doctor_review_rejects_invalid_status(client: AsyncClient):
     create_resp = await client.post(
         "/api/v1/diagnoses",
         headers={"Authorization": f"Bearer {patient_token}"},
-        json={"image_keys": _IMAGE_KEYS},
+        json={"image_keys": _IMAGE_KEYS, "modality": _MODALITY},
     )
     diagnosis_id = create_resp.json()["id"]
 
