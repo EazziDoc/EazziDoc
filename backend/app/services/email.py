@@ -397,6 +397,47 @@ def send_settings_updated(email: str, name: str, changed_fields: list[str]) -> N
     )
 
 
+def send_doctor_scan_uploaded(
+    patient_email: str,
+    patient_name: str,
+    doctor_name: str,
+) -> None:
+    dashboard_url = f"{settings.FRONTEND_URL}/patient/diagnoses"
+
+    body = f"""
+    <h2 style="margin:0 0 8px;font-size:20px;color:#111827;">New scan submitted on your behalf</h2>
+    <p style="margin:0 0 20px;font-size:15px;color:#4b5563;line-height:1.6;">
+      Hi {patient_name}, Dr. {doctor_name} has uploaded a medical scan for you.
+      Our AI is currently analysing it — you will be able to view the results and your
+      doctor's clinical report from your dashboard shortly.
+    </p>
+    <table cellpadding="0" cellspacing="0" width="100%"
+           style="background:{_LIGHT_BG};border-radius:8px;padding:20px;margin-bottom:28px;">
+      <tr>
+        <td style="font-size:13px;color:#6b7280;padding-bottom:6px;">Submitted by</td>
+        <td style="font-size:14px;font-weight:600;color:#111827;text-align:right;">
+          Dr. {doctor_name}
+        </td>
+      </tr>
+    </table>
+    <p style="margin:0 0 24px;font-size:14px;color:#4b5563;">
+      If you have questions, contact Dr. {doctor_name} through your dashboard or reply to
+      this email.
+    </p>
+    <a href="{dashboard_url}"
+       style="display:inline-block;background:{_PRIMARY};color:#ffffff;
+              font-size:15px;font-weight:600;padding:13px 28px;
+              border-radius:8px;text-decoration:none;">
+      View my diagnoses →
+    </a>
+    """
+    _send(
+        to=patient_email,
+        subject=f"[EazziDoc] Dr. {doctor_name} submitted a scan for you",
+        html=_base("New Scan Submitted — EazziDoc", body),
+    )
+
+
 def send_contact_message(
     to_email: str,
     to_name: str,

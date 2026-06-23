@@ -2,6 +2,7 @@ import type {
   Appointment,
   BatchUploadResponse,
   Diagnosis,
+  DoctorPatientView,
   DoctorProfile,
   PatientProfile,
   User,
@@ -194,10 +195,24 @@ export async function getPendingQueue() {
 
 export async function reviewDiagnosis(
   id: string,
-  data: { notes: string; status: string },
+  data: { notes: string; status: string; treatment_plan?: string; referral?: string },
 ) {
   return req<Diagnosis>(`/diagnoses/${id}/review`, {
     method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function doctorGetPatient(patientId: string) {
+  return req<DoctorPatientView>(`/diagnoses/doctor/patients/${patientId}`);
+}
+
+export async function doctorCreateDiagnosis(
+  patientId: string,
+  data: { image_keys: string[]; patient_notes?: string },
+) {
+  return req<Diagnosis>(`/diagnoses/doctor/patients/${patientId}`, {
+    method: "POST",
     body: JSON.stringify(data),
   });
 }

@@ -26,13 +26,20 @@ const REVIEW_STATUSES = [
 function DiagnosisCard({ dx }: { dx: Diagnosis }) {
   const qc = useQueryClient();
   const [notes, setNotes] = useState("");
+  const [treatmentPlan, setTreatmentPlan] = useState("");
+  const [referral, setReferral] = useState("");
   const [status, setStatus] = useState<string>("confirmed");
   const [expanded, setExpanded] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
   const { mutateAsync, isPending } = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: { notes: string; status: string } }) =>
-      reviewDiagnosis(id, data),
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: { notes: string; status: string; treatment_plan?: string; referral?: string };
+    }) => reviewDiagnosis(id, data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["queue"] }),
   });
 
@@ -41,7 +48,15 @@ function DiagnosisCard({ dx }: { dx: Diagnosis }) {
     if (!notes.trim()) { setSubmitError("Notes are required before submitting a review."); return; }
     setSubmitError("");
     try {
-      await mutateAsync({ id: dx.id, data: { notes: notes.trim(), status } });
+      await mutateAsync({
+        id: dx.id,
+        data: {
+          notes: notes.trim(),
+          status,
+          treatment_plan: treatmentPlan.trim() || undefined,
+          referral: referral.trim() || undefined,
+        },
+      });
     } catch (err: unknown) {
       setSubmitError(err instanceof Error ? err.message : "Review failed");
     }
@@ -174,6 +189,24 @@ function DiagnosisCard({ dx }: { dx: Diagnosis }) {
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           required
+        />
+
+        <Textarea
+          id={`treatment-${dx.id}`}
+          label="Treatment plan (optional)"
+          placeholder="Medications, procedures, lifestyle changes, follow-up schedule…"
+          rows={3}
+          value={treatmentPlan}
+          onChange={(e) => setTreatmentPlan(e.target.value)}
+        />
+
+        <Textarea
+          id={`referral-${dx.id}`}
+          label="Referral (optional)"
+          placeholder="e.g. Refer to cardiologist at Lagos University Teaching Hospital…"
+          rows={2}
+          value={referral}
+          onChange={(e) => setReferral(e.target.value)}
         />
 
         {submitError && (

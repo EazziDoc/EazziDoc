@@ -21,6 +21,13 @@ class Diagnosis(Base):
     reviewing_doctor_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("doctors.id", ondelete="SET NULL"), nullable=True
     )
+    # Who initiated the scan: "patient" (self-upload) or "doctor" (uploaded on patient's behalf)
+    uploaded_by_role: Mapped[str] = mapped_column(
+        String(10), nullable=False, server_default="patient"
+    )
+    uploading_doctor_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("doctors.id", ondelete="SET NULL"), nullable=True
+    )
 
     # Image object keys in Cloudflare R2 (1-5 views per diagnosis)
     image_keys: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
@@ -42,6 +49,8 @@ class Diagnosis(Base):
     status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
 
     doctor_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    treatment_plan: Mapped[str | None] = mapped_column(Text, nullable=True)
+    referral: Mapped[str | None] = mapped_column(Text, nullable=True)
     doctor_reviewed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -54,5 +63,10 @@ class Diagnosis(Base):
     )
 
     patient: Mapped["Patient"] = relationship(back_populates="diagnoses")
-    reviewing_doctor: Mapped["Doctor"] = relationship(back_populates="reviews")
+    reviewing_doctor: Mapped["Doctor"] = relationship(
+        "Doctor", foreign_keys=[reviewing_doctor_id], back_populates="reviews"
+    )
+    uploading_doctor: Mapped["Doctor"] = relationship(
+        "Doctor", foreign_keys=[uploading_doctor_id], back_populates="uploaded_diagnoses"
+    )
     appointment: Mapped["Appointment"] = relationship(back_populates="diagnosis", uselist=False)
