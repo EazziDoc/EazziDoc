@@ -59,7 +59,11 @@ async def test_create_diagnosis_with_patient_notes(client: AsyncClient):
     resp = await client.post(
         "/api/v1/diagnoses",
         headers={"Authorization": f"Bearer {token}"},
-        json={"image_keys": _IMAGE_KEYS, "patient_notes": "Blurry vision for 2 weeks"},
+        json={
+            "image_keys": _IMAGE_KEYS,
+            "modality": _MODALITY,
+            "patient_notes": "Blurry vision for 2 weeks",
+        },
     )
 
     assert resp.status_code == 202
