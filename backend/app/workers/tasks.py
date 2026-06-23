@@ -24,7 +24,9 @@ logger = logging.getLogger(__name__)
 # Creating a new engine per task was creating a new connection pool every call,
 # which exhausted Fly Postgres connection limits (root cause of OperationalError
 # "invalid username-password pair" under load).
-_engine = create_async_engine(settings.DATABASE_URL, echo=False, pool_size=2, max_overflow=2)
+_engine = create_async_engine(
+    settings.DATABASE_URL, echo=False, pool_size=2, max_overflow=2, connect_args={"ssl": False}
+)
 _SessionLocal = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
 
 

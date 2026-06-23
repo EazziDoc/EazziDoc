@@ -23,7 +23,9 @@ logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = 5  # seconds between polls when the queue is empty
 
-_engine = create_async_engine(settings.DATABASE_URL, echo=False, pool_size=2, max_overflow=2)
+_engine = create_async_engine(
+    settings.DATABASE_URL, echo=False, pool_size=2, max_overflow=2, connect_args={"ssl": False}
+)
 _SessionLocal = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
 
 
