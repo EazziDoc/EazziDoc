@@ -41,6 +41,13 @@ export interface DoctorProfile {
   rejection_reason: string | null;
 }
 
+export interface SpecialistModel {
+  model: string;
+  top_finding: string;
+  top_confidence: number;
+  all_findings: Record<string, number>;
+}
+
 export interface DiagnosisReport {
   summary?: string;
   findings?: string[];
@@ -50,11 +57,16 @@ export interface DiagnosisReport {
   urgency?: "routine" | "urgent" | "emergent";
   patient_notes?: string;
   error?: string;
+  specialist_model?: SpecialistModel;
+  segmentation_key?: string;
 }
 
 export interface Diagnosis {
   id: string;
   patient_id: string;
+  reviewing_doctor_id: string | null;
+  uploaded_by_role: "patient" | "doctor";
+  uploading_doctor_id: string | null;
   image_keys: string[];
   modality: string | null;
   model_used: string | null;
@@ -62,8 +74,22 @@ export interface Diagnosis {
   report: DiagnosisReport;
   status: string;
   doctor_notes: string | null;
+  treatment_plan: string | null;
+  referral: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface DoctorPatientView {
+  id: string;
+  first_name: string;
+  last_name: string;
+  date_of_birth: string | null;
+  gender: string | null;
+  phone: string | null;
+  country: string | null;
+  identity_verification_status: string | null;
+  diagnoses: Diagnosis[];
 }
 
 export interface Appointment {

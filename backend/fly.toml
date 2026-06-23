@@ -2,11 +2,19 @@ app = "eazzidoc-api"
 primary_region = "jnb"
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = "Dockerfile.worker"
+  # Both web and worker processes share this image.
+  # The web process never imports torch at runtime — ML models only load inside
+  # the Celery worker task — so the extra disk space has no runtime memory cost.
 
 [env]
   ENVIRONMENT = "production"
   PORT = "8000"
+
+# ── Process groups ─────────────────────────────────────────────────────────────
+[processes]
+  app    = "uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1"
+  worker = "celery -A app.core.celery_app worker --loglevel=info --concurrency=1"
 
 [http_service]
   internal_port = 8000
@@ -14,15 +22,26 @@ primary_region = "jnb"
   auto_stop_machines = true
   auto_start_machines = true
   min_machines_running = 1
+  processes = ["app"]
 
   [http_service.concurrency]
     type = "requests"
     hard_limit = 100
     soft_limit = 80
 
+# ── Web: slim, no ML ──────────────────────────────────────────────────────────
 [[vm]]
+  processes = ["app"]
   size = "shared-cpu-1x"
   memory = "512mb"
+
+# ── Worker: PyTorch + TorchXRayVision ─────────────────────────────────────────
+# CPU-only torch (~180 MB) + model (~150 MB) + overhead ≈ 450 MB.
+# 1 GB gives headroom for cold model loads and keeps the worker stable.
+[[vm]]
+  processes = ["worker"]
+  size = "shared-cpu-2x"
+  memory = "1gb"
 
 [deploy]
   release_command = "alembic upgrade head"
