@@ -32,6 +32,16 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str
 
+    @field_validator("REDIS_URL", mode="before")
+    @classmethod
+    def fix_redis_url(cls, v: str) -> str:
+        # Upstash on Fly.io uses rediss:// (TLS). redis-py requires ssl_cert_reqs
+        # to be set explicitly — baking it into the URL survives reconnections.
+        if v.startswith("rediss://") and "ssl_cert_reqs" not in v:
+            sep = "&" if "?" in v else "?"
+            v = f"{v}{sep}ssl_cert_reqs=CERT_NONE"
+        return v
+
     # Auth
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
