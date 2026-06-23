@@ -167,10 +167,6 @@ def _role_escalated_token(subject: str) -> str:
     )
 
 
-def _mock_celery():
-    return patch("app.api.v1.diagnoses.process_diagnosis.delay")
-
-
 # ── 1. authentication bypass ──────────────────────────────────────────────────
 
 
@@ -266,12 +262,11 @@ async def test_patient_cannot_view_another_patients_diagnosis(client: AsyncClien
     token_a = await _login(client, _PATIENT_A)
     token_b = await _login(client, _PATIENT_B)
 
-    with _mock_celery():
-        resp_create = await client.post(
-            "/api/v1/diagnoses",
-            headers=_auth(token_a),
-            json={"image_keys": _IMAGE_KEYS},
-        )
+    resp_create = await client.post(
+        "/api/v1/diagnoses",
+        headers=_auth(token_a),
+        json={"image_keys": _IMAGE_KEYS},
+    )
     assert resp_create.status_code == 202
     diagnosis_id = resp_create.json()["id"]
 
