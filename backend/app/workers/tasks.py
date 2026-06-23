@@ -20,14 +20,16 @@ from app.services.storage import storage_service
 
 logger = logging.getLogger(__name__)
 
-
-def _make_session() -> async_sessionmaker:
-    engine = create_async_engine(settings.DATABASE_URL, echo=False)
-    return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+# Module-level engine — one pool shared across all tasks on this worker process.
+# Creating a new engine per task was creating a new connection pool every call,
+# which exhausted Fly Postgres connection limits (root cause of OperationalError
+# "invalid username-password pair" under load).
+_engine = create_async_engine(settings.DATABASE_URL, echo=False, pool_size=2, max_overflow=2)
+_SessionLocal = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
 
 
 async def _run_pipeline(diagnosis_id: str) -> None:
-    SessionLocal = _make_session()
+    SessionLocal = _SessionLocal
     _start = time.perf_counter()
 
     async with SessionLocal() as db:
@@ -35,6 +37,12 @@ async def _run_pipeline(diagnosis_id: str) -> None:
         diagnosis = result.scalar_one_or_none()
         if not diagnosis:
             logger.error("Diagnosis %s not found", diagnosis_id)
+            return
+
+        if diagnosis.status == "cancelled":
+            logger.info(
+                "Diagnosis %s was cancelled before processing started, skipping", diagnosis_id
+            )
             return
 
         # ── download all images from R2 ───────────────────────────────────────
