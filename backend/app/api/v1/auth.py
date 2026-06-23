@@ -3,6 +3,7 @@ import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -65,7 +66,11 @@ async def register(request: Request, body: RegisterRequest, db: AsyncSession = D
         role=body.role,
     )
     db.add(user)
-    await db.flush()  # get user.id before creating profile
+    try:
+        await db.flush()  # get user.id before creating profile
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
     if body.role == "patient":
         db.add(Patient(user_id=user.id, first_name=body.first_name, last_name=body.last_name))

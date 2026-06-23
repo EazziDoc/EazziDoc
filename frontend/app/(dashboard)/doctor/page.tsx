@@ -7,6 +7,7 @@ import { listDoctorAppointments, getPendingQueue } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { SupportedModalities } from "@/components/SupportedModalities";
 import { formatDate, formatDateTime, statusColor } from "@/lib/utils";
 
 export default function DoctorDashboard() {
@@ -56,6 +57,9 @@ export default function DoctorDashboard() {
           </Card>
         ))}
       </div>
+
+      {/* Supported imaging */}
+      <SupportedModalities />
 
       {/* Quick actions */}
       <Card>

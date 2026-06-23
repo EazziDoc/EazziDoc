@@ -6,6 +6,7 @@ import { createDiagnosis, uploadImages } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/input";
+import { SupportedModalities } from "@/components/SupportedModalities";
 
 const ACCEPTED = ["image/jpeg", "image/png", "image/tiff", "application/dicom"];
 const MAX_FILES = 5;
@@ -65,6 +66,8 @@ export default function UploadPage() {
           Upload 1–5 medical images. Our AI will analyse them and generate a report.
         </p>
       </div>
+
+      <SupportedModalities />
 
       <form onSubmit={handleSubmit} className="space-y-5">
         {/* Drop zone */}
