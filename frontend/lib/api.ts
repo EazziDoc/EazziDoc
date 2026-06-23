@@ -189,6 +189,10 @@ export async function getDiagnosis(id: string) {
   return req<Diagnosis>(`/diagnoses/${id}`);
 }
 
+export async function getDiagnosisSegmentationUrl(id: string) {
+  return req<{ url: string }>(`/diagnoses/${id}/segmentation-overlay`);
+}
+
 export async function getPendingQueue() {
   return req<Diagnosis[]>("/diagnoses/queue/pending");
 }

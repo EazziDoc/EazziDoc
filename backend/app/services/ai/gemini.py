@@ -35,7 +35,7 @@ Return ONLY the JSON object below — no markdown fences, no extra text:
 
 Patient notes (if any): {patient_notes}
 Image modality: {modality}
-"""
+{specialist_section}"""
 
 
 def _configure() -> genai.GenerativeModel:
@@ -67,10 +67,24 @@ def detect_modality(images: list[tuple[bytes, str]]) -> str:
         return "unknown"
 
 
+def _format_specialist(specialist: dict | None) -> str:
+    if not specialist:
+        return "Specialist model: not available for this modality — rely on visual analysis only."
+    top = specialist["top_finding"]
+    conf = specialist["top_confidence"]
+    detail = ", ".join(f"{k} {v:.0%}" for k, v in specialist["all_findings"].items())
+    return (
+        f"Specialist model ({specialist['model']}) findings — ground your report on these:\n"
+        f"Top finding: {top} ({conf:.0%} confidence)\n"
+        f"All flagged findings: {detail}"
+    )
+
+
 def generate_report(
     images: list[tuple[bytes, str]],
     modality: str,
     patient_notes: str | None = None,
+    specialist: dict | None = None,
 ) -> dict:
     """Generate a structured diagnostic report. Returns {} on failure."""
     if not settings.GOOGLE_API_KEY:
@@ -80,6 +94,7 @@ def generate_report(
         prompt = _REPORT_PROMPT.format(
             modality=modality,
             patient_notes=patient_notes or "None provided",
+            specialist_section=_format_specialist(specialist),
         )
         parts = [prompt] + [_image_part(b, ct) for b, ct in images]
         response = model.generate_content(parts)

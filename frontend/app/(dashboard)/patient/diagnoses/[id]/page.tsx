@@ -2,9 +2,10 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { useState } from "react";
 import { useParams } from "next/navigation";
-import { getDiagnosis } from "@/lib/api";
-import type { DiagnosisReport } from "@/lib/types";
+import { getDiagnosis, getDiagnosisSegmentationUrl } from "@/lib/api";
+import type { DiagnosisReport, SpecialistModel } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDateTime, statusColor } from "@/lib/utils";
@@ -24,10 +25,84 @@ function ReportSection({ title, children }: { title: string; children: React.Rea
   );
 }
 
-function ReportView({ report, model_used, confidence_score }: {
+function SpecialistPanel({ specialist }: { specialist: SpecialistModel }) {
+  const sorted = Object.entries(specialist.all_findings).sort((a, b) => b[1] - a[1]);
+  return (
+    <div className="rounded-lg bg-blue-50 border border-blue-100 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">
+          Specialist model · {specialist.model}
+        </p>
+        <Badge className="bg-blue-100 text-blue-800 text-xs">
+          {specialist.top_finding} — {Math.round(specialist.top_confidence * 100)}%
+        </Badge>
+      </div>
+      <div className="space-y-1.5">
+        {sorted.map(([label, score]) => (
+          <div key={label} className="flex items-center gap-3">
+            <span className="w-40 shrink-0 text-xs text-gray-700 truncate">{label}</span>
+            <div className="flex-1 h-1.5 rounded-full bg-blue-100 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-blue-500"
+                style={{ width: `${Math.round(score * 100)}%` }}
+              />
+            </div>
+            <span className="w-9 text-right text-xs text-gray-500">
+              {Math.round(score * 100)}%
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SegmentationOverlay({ diagnosisId }: { diagnosisId: string }) {
+  const [overlayUrl, setOverlayUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [shown, setShown] = useState(false);
+
+  async function handleToggle() {
+    if (shown) { setShown(false); return; }
+    if (overlayUrl) { setShown(true); return; }
+    setLoading(true);
+    try {
+      const { url } = await getDiagnosisSegmentationUrl(diagnosisId);
+      setOverlayUrl(url);
+      setShown(true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <button
+        type="button"
+        onClick={handleToggle}
+        disabled={loading}
+        className="text-sm font-medium text-primary-600 hover:underline disabled:opacity-50"
+      >
+        {loading ? "Loading overlay…" : shown ? "Hide AI segmentation overlay" : "Show AI segmentation overlay"}
+      </button>
+      {shown && overlayUrl && (
+        <div className="rounded-lg overflow-hidden border border-gray-200">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={overlayUrl} alt="MedSAM segmentation overlay" className="w-full" />
+          <p className="text-xs text-gray-400 text-center py-2 bg-gray-50">
+            AI segmentation — highlighted region indicates area of interest detected by MedSAM
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReportView({ report, model_used, confidence_score, diagnosisId }: {
   report: DiagnosisReport;
   model_used: string | null;
   confidence_score: number | null;
+  diagnosisId: string;
 }) {
   if (report.error) {
     return (
@@ -51,6 +126,9 @@ function ReportView({ report, model_used, confidence_score }: {
           </Badge>
         )}
       </div>
+
+      {/* Specialist model findings */}
+      {report.specialist_model && <SpecialistPanel specialist={report.specialist_model} />}
 
       {report.summary && (
         <ReportSection title="Summary">
@@ -106,6 +184,13 @@ function ReportView({ report, model_used, confidence_score }: {
       {report.patient_notes && (
         <ReportSection title="Patient notes submitted">
           <p className="text-gray-500 text-sm italic">{report.patient_notes}</p>
+        </ReportSection>
+      )}
+
+      {/* MedSAM segmentation overlay (only shown when key present in report) */}
+      {report.segmentation_key && (
+        <ReportSection title="AI segmentation overlay">
+          <SegmentationOverlay diagnosisId={diagnosisId} />
         </ReportSection>
       )}
     </div>
@@ -188,6 +273,7 @@ export default function DiagnosisDetailPage() {
             report={dx.report ?? {}}
             model_used={dx.model_used}
             confidence_score={dx.confidence_score}
+            diagnosisId={dx.id}
           />
         )}
       </Card>

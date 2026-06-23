@@ -16,6 +16,8 @@ htmlcov/
 *.h5
 *.keras
 *.pt
+*.pth
+*.pth:Zone.Identifier
 *.onnx
 
 # Dev/test files

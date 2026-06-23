@@ -247,6 +247,32 @@ async def doctor_get_patient(
     )
 
 
+# ── patient: segmentation overlay URL (on-demand presigned) ──────────────────
+
+
+@router.get("/{diagnosis_id}/segmentation-overlay", status_code=status.HTTP_200_OK)
+async def get_segmentation_overlay_url(
+    diagnosis_id: str,
+    current_user: User = Depends(require_role("patient")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a fresh 1-hour presigned URL for the MedSAM segmentation overlay."""
+    from app.services.storage import storage_service
+
+    patient = await _get_patient_by_user(db, current_user.id)
+    dx = await _owned_diagnosis(db, diagnosis_id, patient.id)
+
+    seg_key = (dx.report or {}).get("segmentation_key")
+    if not seg_key:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No segmentation overlay for this diagnosis",
+        )
+
+    url = await storage_service.presigned_url(seg_key, expires_in=3600)
+    return {"url": url}
+
+
 # ── patient: single ───────────────────────────────────────────────────────────
 
 

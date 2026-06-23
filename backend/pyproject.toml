@@ -68,6 +68,19 @@ ml = [
     "opencv-python-headless==4.10.0.84",
     "pillow==10.4.0",
     "numpy==1.26.4",
+    # ── hospital AI stack ─────────────────────────────────────────────────────
+    # Chest X-ray: TorchXRayVision (MIT) — runs in-process on CPU
+    # Install CPU-only torch to save ~700 MB vs CUDA build:
+    #   pip install torch --index-url https://download.pytorch.org/whl/cpu
+    # pyproject.toml cannot specify the index URL, so handle this in Dockerfile.worker.
+    "torchxrayvision",
+    "scikit-image",
+    # Skin + Retina: served via HuggingFace Inference API — no local model weights needed.
+    # MedSAM segmentation overlay: segment-anything (Apache 2.0)
+    # Checkpoint must be downloaded separately — set MEDSAM_CHECKPOINT_PATH env var.
+    # Do NOT include the checkpoint file in the Docker image.
+    # See: https://github.com/bowang-lab/MedSAM
+    "segment-anything",
 ]
 
 # prod: adds gunicorn for multi-worker production serving
