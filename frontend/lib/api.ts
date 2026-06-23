@@ -173,6 +173,7 @@ export async function uploadImages(files: File[]) {
 
 export async function createDiagnosis(data: {
   image_keys: string[];
+  modality: string;
   patient_notes?: string;
 }) {
   return req<Diagnosis>("/diagnoses", {
@@ -217,7 +218,7 @@ export async function doctorGetPatient(patientId: string) {
 
 export async function doctorCreateDiagnosis(
   patientId: string,
-  data: { image_keys: string[]; patient_notes?: string },
+  data: { image_keys: string[]; modality: string; patient_notes?: string },
 ) {
   return req<Diagnosis>(`/diagnoses/doctor/patients/${patientId}`, {
     method: "POST",

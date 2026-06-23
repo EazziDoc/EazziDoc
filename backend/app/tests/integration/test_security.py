@@ -56,6 +56,7 @@ _ADMIN_EMAIL = "admin@security-tests.dev"
 _ADMIN_PASSWORD = "AdminPass1"
 
 _IMAGE_KEYS = ["images/test/00000000-0000-0000-0000-000000000099.jpg"]
+_MODALITY = "chest_xray"
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -265,7 +266,7 @@ async def test_patient_cannot_view_another_patients_diagnosis(client: AsyncClien
     resp_create = await client.post(
         "/api/v1/diagnoses",
         headers=_auth(token_a),
-        json={"image_keys": _IMAGE_KEYS},
+        json={"image_keys": _IMAGE_KEYS, "modality": _MODALITY},
     )
     assert resp_create.status_code == 202
     diagnosis_id = resp_create.json()["id"]

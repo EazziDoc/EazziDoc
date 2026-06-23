@@ -100,6 +100,7 @@ async def create_diagnosis(
     diagnosis = Diagnosis(
         patient_id=patient.id,
         image_keys=body.image_keys,
+        modality=body.modality,
         status="pending",
         report=initial_report,
         uploaded_by_role="patient",
@@ -204,6 +205,7 @@ async def doctor_create_diagnosis(
     diagnosis = Diagnosis(
         patient_id=patient.id,
         image_keys=body.image_keys,
+        modality=body.modality,
         status="pending",
         report=initial_report,
         uploaded_by_role="doctor",
