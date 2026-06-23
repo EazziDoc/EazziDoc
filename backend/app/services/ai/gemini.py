@@ -12,9 +12,34 @@ logger = logging.getLogger(__name__)
 
 _MODALITIES = ["chest_xray", "fundus", "skin", "brain_mri", "mammography", "unknown"]
 
+# Common surface forms Gemini may return for each modality
+_ALIASES: dict[str, set[str]] = {
+    "chest_xray": {
+        "chest_xray",
+        "chest x-ray",
+        "chest x ray",
+        "chest_x_ray",
+        "x-ray",
+        "xray",
+        "chest",
+    },
+    "fundus": {
+        "fundus",
+        "retinal fundus",
+        "fundus photography",
+        "fundus photo",
+        "retina",
+        "fundoscopy",
+    },
+    "skin": {"skin", "dermatology", "dermoscopy", "skin lesion", "dermatoscopy"},
+    "brain_mri": {"brain_mri", "brain mri", "mri", "brain", "brain_m_r_i", "mri brain"},
+    "mammography": {"mammography", "mammogram"},
+    "unknown": {"unknown"},
+}
+
 _MODALITY_PROMPT = """\
 You are a radiologist's assistant. Look at this medical image and identify its modality.
-Reply with ONLY one of these exact strings (no explanation):
+Reply with ONLY one of these exact strings — no explanation, no punctuation, nothing else:
 chest_xray, fundus, skin, brain_mri, mammography, unknown
 """
 
@@ -52,6 +77,15 @@ def _image_part(image_bytes: bytes, content_type: str) -> dict:
     }
 
 
+def _normalize_modality(raw: str) -> str:
+    """Map Gemini's freeform reply to one of the canonical modality strings."""
+    cleaned = raw.strip().lower()
+    for canonical, aliases in _ALIASES.items():
+        if cleaned in aliases:
+            return canonical
+    return "unknown"
+
+
 def detect_modality(images: list[tuple[bytes, str]]) -> str:
     """Return the medical image modality string for the first image."""
     if not settings.GOOGLE_API_KEY:
@@ -60,8 +94,7 @@ def detect_modality(images: list[tuple[bytes, str]]) -> str:
         model = _configure()
         parts = [_MODALITY_PROMPT] + [_image_part(b, ct) for b, ct in images[:1]]
         response = model.generate_content(parts)
-        result = response.text.strip().lower()
-        return result if result in _MODALITIES else "unknown"
+        return _normalize_modality(response.text)
     except Exception:
         logger.exception("Gemini modality detection failed")
         return "unknown"
@@ -91,8 +124,13 @@ def generate_report(
         return {}
     try:
         model = _configure()
+        modality_label = (
+            modality
+            if modality != "unknown"
+            else "Determine the modality from the image and analyse accordingly"
+        )
         prompt = _REPORT_PROMPT.format(
-            modality=modality,
+            modality=modality_label,
             patient_notes=patient_notes or "None provided",
             specialist_section=_format_specialist(specialist),
         )
