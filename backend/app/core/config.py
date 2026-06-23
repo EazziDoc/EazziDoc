@@ -39,7 +39,7 @@ class Settings(BaseSettings):
         # to be set explicitly — baking it into the URL survives reconnections.
         if v.startswith("rediss://") and "ssl_cert_reqs" not in v:
             sep = "&" if "?" in v else "?"
-            v = f"{v}{sep}ssl_cert_reqs=CERT_NONE"
+            v = f"{v}{sep}ssl_cert_reqs=none"
         return v
 
     # Auth
