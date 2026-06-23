@@ -115,6 +115,11 @@ async def create_diagnosis(
         logger.exception("Failed to queue diagnosis %s — Celery/Redis unavailable", diagnosis.id)
         diagnosis.status = "failed"
         await db.commit()
+        # Must refresh: the second commit sets updated_at server-side via onupdate.
+        # Without this, FastAPI lazy-loads the attribute during response serialisation,
+        # which raises MissingGreenlet → ExceptionGroup through Starlette middleware
+        # → connection closed before CORS headers are written.
+        await db.refresh(diagnosis)
 
     return diagnosis
 
@@ -227,6 +232,7 @@ async def doctor_create_diagnosis(
         logger.exception("Failed to queue diagnosis %s — Celery/Redis unavailable", diagnosis.id)
         diagnosis.status = "failed"
         await db.commit()
+        await db.refresh(diagnosis)
 
     if patient_user:
         try:
