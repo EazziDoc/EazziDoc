@@ -1,11 +1,15 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+ModalityType = Literal["chest_xray", "fundus", "skin", "brain_mri", "mammography"]
 
 
 class DiagnosisCreate(BaseModel):
     image_keys: list[str] = Field(min_length=1, max_length=5)
+    modality: ModalityType
     patient_notes: str | None = Field(default=None, max_length=1000)
 
 

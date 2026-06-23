@@ -6,7 +6,7 @@ import { createDiagnosis, uploadImages } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/input";
-import { SupportedModalities } from "@/components/SupportedModalities";
+import { ModalitySelector } from "@/components/ModalitySelector";
 
 const ACCEPTED = ["image/jpeg", "image/png", "image/tiff", "application/dicom"];
 const MAX_FILES = 5;
@@ -16,6 +16,7 @@ export default function UploadPage() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
+  const [modality, setModality] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
   const [step, setStep] = useState<"select" | "uploading" | "creating">("select");
@@ -40,6 +41,7 @@ export default function UploadPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (files.length === 0) { setError("Add at least one image."); return; }
+    if (!modality) { setError("Select an image type."); return; }
     setError("");
     setStep("uploading");
     try {
@@ -47,6 +49,7 @@ export default function UploadPage() {
       setStep("creating");
       const diagnosis = await createDiagnosis({
         image_keys: uploaded.map((u) => u.image_key),
+        modality: modality!,
         patient_notes: notes.trim() || undefined,
       });
       router.push(`/patient/diagnoses/${diagnosis.id}`);
@@ -63,13 +66,13 @@ export default function UploadPage() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">New diagnosis</h1>
         <p className="text-gray-500 mt-1">
-          Upload 1–5 medical images. Our AI will analyse them and generate a report.
+          Select the image type, upload your scan, and our AI will analyse it.
         </p>
       </div>
 
-      <SupportedModalities />
-
       <form onSubmit={handleSubmit} className="space-y-5">
+        <ModalitySelector value={modality} onChange={setModality} disabled={busy} />
+
         {/* Drop zone */}
         <Card
           className="border-2 border-dashed border-gray-300 text-center cursor-pointer hover:border-primary-400 transition-colors"
@@ -132,7 +135,7 @@ export default function UploadPage() {
         <Button
           type="submit"
           loading={busy}
-          disabled={files.length === 0 || busy}
+          disabled={files.length === 0 || !modality || busy}
           size="lg"
           className="w-full"
         >

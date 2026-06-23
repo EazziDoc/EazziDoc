@@ -68,9 +68,8 @@ async def _run_pipeline(diagnosis_id: str) -> None:
             await db.commit()
             return
 
-        # ── modality detection ────────────────────────────────────────────────
-        modality = gemini.detect_modality(images)
-        diagnosis.modality = modality
+        # Modality is set at upload time by the user — no detection needed.
+        modality = diagnosis.modality or "unknown"
 
         # ── specialist model (TorchXRayVision / RETFound / HAM10000) ─────────
         primary_image_bytes = images[0][0]
