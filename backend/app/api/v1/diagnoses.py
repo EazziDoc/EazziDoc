@@ -58,13 +58,18 @@ async def _owned_diagnosis(db: AsyncSession, diagnosis_id, patient_id) -> Diagno
     return dx
 
 
-async def _get_verified_doctor(db: AsyncSession, current_user: User) -> Doctor:
+async def _get_doctor(db: AsyncSession, current_user: User) -> Doctor:
     result = await db.execute(select(Doctor).where(Doctor.user_id == current_user.id))
     doctor = result.scalar_one_or_none()
     if not doctor:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Doctor profile not found"
         )
+    return doctor
+
+
+async def _get_verified_doctor(db: AsyncSession, current_user: User) -> Doctor:
+    doctor = await _get_doctor(db, current_user)
     if not doctor.is_verified:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -265,7 +270,7 @@ async def review_diagnosis(
     current_user: User = Depends(require_role("doctor")),
     db: AsyncSession = Depends(get_db),
 ):
-    doctor = await _get_verified_doctor(db, current_user)
+    doctor = await _get_doctor(db, current_user)
 
     result = await db.execute(select(Diagnosis).where(Diagnosis.id == diagnosis_id))
     dx = result.scalar_one_or_none()
