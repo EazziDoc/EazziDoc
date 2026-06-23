@@ -7,6 +7,7 @@ import { getPatientProfile, listAppointments, listDiagnoses } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { SupportedModalities } from "@/components/SupportedModalities";
 import { formatDate, statusColor } from "@/lib/utils";
 
 export default function PatientDashboard() {
@@ -108,6 +109,9 @@ export default function PatientDashboard() {
           </Card>
         ))}
       </div>
+
+      {/* Supported imaging */}
+      <SupportedModalities />
 
       {/* Quick actions */}
       <Card>
