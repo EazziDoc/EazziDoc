@@ -90,7 +90,7 @@ async def _run_pipeline(diagnosis_id: str) -> None:
             report = groq_client.generate_report(modality, patient_notes, specialist)
 
         if report:
-            diagnosis.model_used = "gemini-2.0-flash-exp"
+            diagnosis.model_used = "gemini-2.0-flash"
             diagnosis.confidence_score = float(report.pop("confidence", 0.0))
             if specialist:
                 report["specialist_model"] = specialist
