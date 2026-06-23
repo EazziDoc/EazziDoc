@@ -22,12 +22,15 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
-      # Ensure both process groups have machines running.
-      # 'app' machines are already managed by [http_service] auto-start/stop.
-      # 'worker' machines must be explicitly scaled — this is idempotent:
-      # if the machine already exists, the scale count is unchanged.
-      - name: Ensure worker machine is running
-        run: flyctl scale count worker=1 --app eazzidoc-api --yes
+      # Force-cycle the worker machine so it picks up the new image and command.
+      # 'flyctl deploy' replaces app machines, but the worker process group (no
+      # HTTP health check) can keep the old machine running if the new one fails
+      # to start. Scale to 0 then 1 guarantees a fresh machine with new code.
+      - name: Restart worker machine
+        run: |
+          flyctl scale count worker=0 --app eazzidoc-api --yes
+          sleep 5
+          flyctl scale count worker=1 --app eazzidoc-api --yes
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
