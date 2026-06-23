@@ -193,6 +193,10 @@ export async function getDiagnosisSegmentationUrl(id: string) {
   return req<{ url: string }>(`/diagnoses/${id}/segmentation-overlay`);
 }
 
+export async function cancelDiagnosis(id: string) {
+  return req<Diagnosis>(`/diagnoses/${id}/cancel`, { method: "POST" });
+}
+
 export async function getPendingQueue() {
   return req<Diagnosis[]>("/diagnoses/queue/pending");
 }

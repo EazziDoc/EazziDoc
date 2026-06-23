@@ -109,9 +109,39 @@ async def create_diagnosis(
     await db.commit()
     await db.refresh(diagnosis)
 
-    process_diagnosis.delay(str(diagnosis.id))
+    try:
+        process_diagnosis.delay(str(diagnosis.id))
+    except Exception:
+        logger.exception("Failed to queue diagnosis %s — Celery/Redis unavailable", diagnosis.id)
+        diagnosis.status = "failed"
+        await db.commit()
 
     return diagnosis
+
+
+# ── patient: cancel pending diagnosis ─────────────────────────────────────────
+
+
+@router.post("/{diagnosis_id}/cancel", response_model=DiagnosisResponse)
+async def cancel_diagnosis(
+    diagnosis_id: str,
+    current_user: User = Depends(require_role("patient")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancel a pending or processing diagnosis. Has no effect once AI is complete."""
+    patient = await _get_patient_by_user(db, current_user.id)
+    dx = await _owned_diagnosis(db, diagnosis_id, patient.id)
+
+    if dx.status not in ("pending", "processing"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot cancel a diagnosis with status '{dx.status}'",
+        )
+
+    dx.status = "cancelled"
+    await db.commit()
+    await db.refresh(dx)
+    return dx
 
 
 # ── patient: list ─────────────────────────────────────────────────────────────
@@ -191,7 +221,12 @@ async def doctor_create_diagnosis(
     await db.commit()
     await db.refresh(diagnosis)
 
-    process_diagnosis.delay(str(diagnosis.id))
+    try:
+        process_diagnosis.delay(str(diagnosis.id))
+    except Exception:
+        logger.exception("Failed to queue diagnosis %s — Celery/Redis unavailable", diagnosis.id)
+        diagnosis.status = "failed"
+        await db.commit()
 
     if patient_user:
         try:

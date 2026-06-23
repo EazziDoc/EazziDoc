@@ -1,16 +1,22 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { listDiagnoses } from "@/lib/api";
+import { cancelDiagnosis, listDiagnoses } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { formatDate, statusColor } from "@/lib/utils";
 
 export default function DiagnosesPage() {
+  const queryClient = useQueryClient();
   const { data: diagnoses = [], isLoading } = useQuery({
     queryKey: ["diagnoses"],
     queryFn: listDiagnoses,
+  });
+
+  const { mutate: cancel, isPending: cancelling } = useMutation({
+    mutationFn: cancelDiagnosis,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["diagnoses"] }),
   });
 
   return (
@@ -70,12 +76,23 @@ export default function DiagnosesPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <Link
-                      href={`/patient/diagnoses/${d.id}`}
-                      className="text-primary-600 hover:underline"
-                    >
-                      View →
-                    </Link>
+                    <div className="flex items-center justify-end gap-3">
+                      {["pending", "processing"].includes(d.status) && (
+                        <button
+                          onClick={() => cancel(d.id)}
+                          disabled={cancelling}
+                          className="text-xs text-red-500 hover:text-red-700 disabled:opacity-40"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                      <Link
+                        href={`/patient/diagnoses/${d.id}`}
+                        className="text-primary-600 hover:underline"
+                      >
+                        View →
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               ))}
