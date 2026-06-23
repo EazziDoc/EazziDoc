@@ -3,8 +3,6 @@
 All AI (Gemini, Groq) and Celery calls are mocked — no external services needed.
 """
 
-from unittest.mock import patch
-
 from httpx import AsyncClient
 
 _PATIENT = {
@@ -35,41 +33,33 @@ async def _login(client: AsyncClient, user: dict) -> str:
     return resp.json()["access_token"]
 
 
-def _mock_celery():
-    """Patch process_diagnosis.delay so no task is actually queued."""
-    return patch("app.api.v1.diagnoses.process_diagnosis.delay")
-
-
 # ── create diagnosis ──────────────────────────────────────────────────────────
 
 
-async def test_create_diagnosis_queues_task(client: AsyncClient):
+async def test_create_diagnosis_returns_pending(client: AsyncClient):
     token = await _login(client, _PATIENT)
 
-    with _mock_celery() as mock_delay:
-        resp = await client.post(
-            "/api/v1/diagnoses",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"image_keys": _IMAGE_KEYS},
-        )
+    resp = await client.post(
+        "/api/v1/diagnoses",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"image_keys": _IMAGE_KEYS},
+    )
 
     assert resp.status_code == 202
     data = resp.json()
     assert data["status"] == "pending"
     assert data["image_keys"] == _IMAGE_KEYS
     assert "id" in data
-    mock_delay.assert_called_once_with(data["id"])
 
 
 async def test_create_diagnosis_with_patient_notes(client: AsyncClient):
     token = await _login(client, _PATIENT)
 
-    with _mock_celery():
-        resp = await client.post(
-            "/api/v1/diagnoses",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"image_keys": _IMAGE_KEYS, "patient_notes": "Blurry vision for 2 weeks"},
-        )
+    resp = await client.post(
+        "/api/v1/diagnoses",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"image_keys": _IMAGE_KEYS, "patient_notes": "Blurry vision for 2 weeks"},
+    )
 
     assert resp.status_code == 202
     data = resp.json()
@@ -86,34 +76,31 @@ async def test_create_diagnosis_requires_auth(client: AsyncClient):
 
 async def test_create_diagnosis_doctor_cannot_submit(client: AsyncClient):
     token = await _login(client, _DOCTOR)
-    with _mock_celery():
-        resp = await client.post(
-            "/api/v1/diagnoses",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"image_keys": _IMAGE_KEYS},
-        )
+    resp = await client.post(
+        "/api/v1/diagnoses",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"image_keys": _IMAGE_KEYS},
+    )
     assert resp.status_code == 403
 
 
 async def test_create_diagnosis_rejects_empty_image_keys(client: AsyncClient):
     token = await _login(client, _PATIENT)
-    with _mock_celery():
-        resp = await client.post(
-            "/api/v1/diagnoses",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"image_keys": []},
-        )
+    resp = await client.post(
+        "/api/v1/diagnoses",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"image_keys": []},
+    )
     assert resp.status_code == 422
 
 
 async def test_create_diagnosis_rejects_too_many_images(client: AsyncClient):
     token = await _login(client, _PATIENT)
-    with _mock_celery():
-        resp = await client.post(
-            "/api/v1/diagnoses",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"image_keys": [f"images/uid/{i}.jpg" for i in range(6)]},
-        )
+    resp = await client.post(
+        "/api/v1/diagnoses",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"image_keys": [f"images/uid/{i}.jpg" for i in range(6)]},
+    )
     assert resp.status_code == 422
 
 
@@ -123,12 +110,11 @@ async def test_create_diagnosis_rejects_too_many_images(client: AsyncClient):
 async def test_list_diagnoses_returns_own_only(client: AsyncClient):
     token = await _login(client, _PATIENT)
 
-    with _mock_celery():
-        await client.post(
-            "/api/v1/diagnoses",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"image_keys": _IMAGE_KEYS},
-        )
+    await client.post(
+        "/api/v1/diagnoses",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"image_keys": _IMAGE_KEYS},
+    )
 
     resp = await client.get(
         "/api/v1/diagnoses",
@@ -144,12 +130,11 @@ async def test_list_diagnoses_returns_own_only(client: AsyncClient):
 async def test_get_diagnosis_by_id(client: AsyncClient):
     token = await _login(client, _PATIENT)
 
-    with _mock_celery():
-        create_resp = await client.post(
-            "/api/v1/diagnoses",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"image_keys": _IMAGE_KEYS},
-        )
+    create_resp = await client.post(
+        "/api/v1/diagnoses",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"image_keys": _IMAGE_KEYS},
+    )
     diagnosis_id = create_resp.json()["id"]
 
     resp = await client.get(
@@ -177,12 +162,11 @@ async def test_doctor_can_review_diagnosis(client: AsyncClient):
     patient_token = await _login(client, _PATIENT)
     doctor_token = await _login(client, _DOCTOR)
 
-    with _mock_celery():
-        create_resp = await client.post(
-            "/api/v1/diagnoses",
-            headers={"Authorization": f"Bearer {patient_token}"},
-            json={"image_keys": _IMAGE_KEYS},
-        )
+    create_resp = await client.post(
+        "/api/v1/diagnoses",
+        headers={"Authorization": f"Bearer {patient_token}"},
+        json={"image_keys": _IMAGE_KEYS},
+    )
     diagnosis_id = create_resp.json()["id"]
 
     resp = await client.patch(
@@ -200,12 +184,11 @@ async def test_doctor_review_rejects_invalid_status(client: AsyncClient):
     patient_token = await _login(client, _PATIENT)
     doctor_token = await _login(client, _DOCTOR)
 
-    with _mock_celery():
-        create_resp = await client.post(
-            "/api/v1/diagnoses",
-            headers={"Authorization": f"Bearer {patient_token}"},
-            json={"image_keys": _IMAGE_KEYS},
-        )
+    create_resp = await client.post(
+        "/api/v1/diagnoses",
+        headers={"Authorization": f"Bearer {patient_token}"},
+        json={"image_keys": _IMAGE_KEYS},
+    )
     diagnosis_id = create_resp.json()["id"]
 
     resp = await client.patch(
