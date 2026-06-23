@@ -22,7 +22,7 @@ def _load_model():
     import torchxrayvision as xrv
 
     logger.info("Loading TorchXRayVision model (first call — downloads weights if needed)…")
-    model = xrv.models.DenseNet(weights="densenet121-res224-all")
+    model = xrv.models.DenseNet(weights="densenet121-res224-all", cache_dir="/tmp/torchxrayvision")
     model.eval()
     logger.info("TorchXRayVision model ready")
     return model
