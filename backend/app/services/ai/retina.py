@@ -117,7 +117,11 @@ def _load_odir_checkpoint():
     sd = ckpt.get("model_state_dict", ckpt.get("model", ckpt.get("state_dict", ckpt)))
 
     model = _Model()
-    model.load_state_dict(sd, strict=True)
+    missing, unexpected = model.load_state_dict(sd, strict=False)
+    if missing:
+        logger.warning("ODIR checkpoint missing keys: %s", missing)
+    if unexpected:
+        logger.warning("ODIR checkpoint unexpected keys: %s", unexpected)
     model.eval()
     return model
 
