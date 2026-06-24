@@ -25,9 +25,19 @@ RUN pip install --no-cache-dir \
         torch torchvision \
         --index-url https://download.pytorch.org/whl/cpu
 
-# Step 2 — ML vision stack.
+# Step 2a — Clone LiteMedSAM before pip sees it.
+# pip's VCS backend (git+https://) is unreliable in CI/Docker builder environments —
+# it runs git ls-remote internally and silently marks the source as "(unavailable)"
+# if the subprocess fails for any reason (SSL, rate-limit, missing config).
+# Cloning explicitly gives a clear error if GitHub is unreachable, and lets pip
+# install from a local directory where no further network calls are needed.
+RUN git clone --depth=1 --branch LiteMedSAM \
+        https://github.com/bowang-lab/MedSAM.git /tmp/LiteMedSAM
+
+# Step 2b — ML vision stack.
 # torch/torchvision are already satisfied; pip will not reinstall them.
-# LiteMedSAM branch patches segment_anything to register the vit_t backbone.
+# LiteMedSAM (installed from the local clone) patches segment_anything to register
+# the vit_t backbone needed by medsam.py.
 # timm + huggingface_hub + transformers are needed for RETFound and the skin model.
 # opencv-python-headless is needed for retina preprocessing (cv2).
 RUN pip install --no-cache-dir \
@@ -37,7 +47,8 @@ RUN pip install --no-cache-dir \
         huggingface_hub \
         transformers \
         opencv-python-headless \
-        "segment_anything @ git+https://github.com/bowang-lab/MedSAM@LiteMedSAM"
+        /tmp/LiteMedSAM \
+    && rm -rf /tmp/LiteMedSAM
 
 # Step 3 — rest of the application (FastAPI, Celery, DB drivers, etc.)
 # Using prod-no-ml so pip does not re-evaluate the ML group and accidentally
