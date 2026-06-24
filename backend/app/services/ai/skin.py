@@ -1,79 +1,84 @@
-"""Skin disease classifier via HuggingFace free Inference API.
+"""Skin disease classifier — HuggingFace Inference API.
 
-Calls a HAM10000-trained model hosted on HuggingFace — no local model
-weights, no in-process GPU/CPU memory. Same free-tier approach as RETFound.
+Model: Anwarkh1/Skin_Cancer-Image_Classification
+Architecture: ViT-B/16 fine-tuned on HAM10000 (7 classes).
 
-Default model: Anwarkh1/Skin_Disease-Image_Classification
-Override via SKIN_MODEL_ID env var to swap to a better model without code changes.
+Using the HF Inference API instead of loading the model locally removes the
+need for the `transformers` package (~600 MB) from the worker image and
+avoids loading ~400 MB of weights into RAM per worker process.
+
+7 classes:
+  benign_keratosis-like_lesions, basal_cell_carcinoma, actinic_keratoses,
+  vascular_lesions, melanocytic_Nevi, melanoma, dermatofibroma
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from io import BytesIO
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "Anwarkh1/Skin_Disease-Image_Classification"
-_TIMEOUT = 60.0
+_MODEL_REPO = "Anwarkh1/Skin_Cancer-Image_Classification"
+_API_URL = f"https://router.huggingface.co/hf-inference/models/{_MODEL_REPO}"
+_CONFIDENCE_THRESHOLD = 0.05
 
 
-def _model_id() -> str:
-    return getattr(settings, "SKIN_MODEL_ID", None) or _DEFAULT_MODEL
+def _sync_analyze(image_bytes: bytes) -> dict | None:
+    if not settings.HUGGINGFACE_API_KEY:
+        logger.warning("HUGGINGFACE_API_KEY not set — skin model unavailable")
+        return None
+
+    try:
+        import httpx
+        from PIL import Image
+
+        # Normalise to JPEG so the request always carries a known content type.
+        buf = BytesIO()
+        Image.open(BytesIO(image_bytes)).convert("RGB").save(buf, format="JPEG", quality=95)
+        jpeg_bytes = buf.getvalue()
+
+        resp = httpx.post(
+            _API_URL,
+            content=jpeg_bytes,
+            headers={
+                "Authorization": f"Bearer {settings.HUGGINGFACE_API_KEY}",
+                "Content-Type": "image/jpeg",
+            },
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        results = resp.json()  # [{"label": str, "score": float}, ...]
+
+        all_findings = {
+            r["label"]: round(r["score"], 4) for r in results if r["score"] >= _CONFIDENCE_THRESHOLD
+        }
+        if not all_findings:
+            top = max(results, key=lambda r: r["score"])
+            all_findings = {top["label"]: round(top["score"], 4)}
+
+        top_finding = max(all_findings, key=all_findings.get)
+
+        logger.info(
+            "Skin API → top: %s (%.0f%%)",
+            top_finding,
+            all_findings[top_finding] * 100,
+        )
+        return {
+            "model": "ViT-SkinDisease-HAM10000",
+            "top_finding": top_finding,
+            "top_confidence": all_findings[top_finding],
+            "all_findings": all_findings,
+        }
+
+    except Exception as exc:
+        logger.warning("Skin HF Inference API failed: %s", exc)
+        return None
 
 
 async def analyze(image_bytes: bytes) -> dict | None:
-    """Call the skin classifier via HuggingFace free Inference API.
-
-    Returns a findings dict or None on failure (cold start, rate limit, etc.).
-    """
-    if not settings.HUGGINGFACE_API_KEY:
-        logger.warning("HUGGINGFACE_API_KEY not set — skipping skin classifier")
-        return None
-
-    import httpx
-
-    model = _model_id()
-    url = f"https://api-inference.huggingface.co/models/{model}"
-    headers = {
-        "Authorization": f"Bearer {settings.HUGGINGFACE_API_KEY}",
-        "Content-Type": "application/octet-stream",
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.post(url, headers=headers, content=image_bytes)
-            resp.raise_for_status()
-            data = resp.json()
-
-        if isinstance(data, list) and data:
-            all_findings = {
-                item["label"]: round(item["score"], 4)
-                for item in data
-                if item.get("score", 0) >= 0.05
-            }
-            if not all_findings:
-                top_raw = max(data, key=lambda x: x.get("score", 0))
-                all_findings = {top_raw["label"]: round(top_raw["score"], 4)}
-
-            top = max(all_findings, key=all_findings.get)
-            return {
-                "model": model.split("/")[-1],
-                "top_finding": top,
-                "top_confidence": all_findings[top],
-                "all_findings": all_findings,
-            }
-
-        if isinstance(data, dict) and "error" in data:
-            logger.warning("Skin model not ready (cold start): %s", data.get("error"))
-            return None
-
-        return None
-
-    except httpx.TimeoutException:
-        logger.warning("Skin HF API timed out — continuing without")
-        return None
-    except Exception:
-        logger.exception("Skin HF API call failed — continuing without skin specialist")
-        return None
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _sync_analyze, image_bytes)

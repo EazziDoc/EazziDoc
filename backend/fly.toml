@@ -35,13 +35,19 @@ primary_region = "jnb"
   size = "shared-cpu-1x"
   memory = "512mb"
 
-# ── Worker: PyTorch + TorchXRayVision ─────────────────────────────────────────
-# CPU-only torch (~180 MB) + model (~150 MB) + overhead ≈ 450 MB.
-# 1 GB gives headroom for cold model loads and keeps the worker stable.
+# ── Worker: PyTorch + TorchXRayVision + RETFound ──────────────────────────────
+# Memory breakdown (approximate):
+#   PyTorch runtime:           ~300 MB
+#   TorchXRayVision DenseNet:  ~150 MB
+#   RETFound ViT-Large (ODIR): ~800 MB  ← main driver; killed at 793 MB on 1 GB
+#   LiteMedSAM (when enabled): ~150 MB
+#   OS + Python overhead:      ~200 MB
+#   ─────────────────────────────────────
+#   Peak estimate:             ~1.6 GB  →  2 GB gives safe headroom
 [[vm]]
   processes = ["worker"]
   size = "shared-cpu-2x"
-  memory = "1gb"
+  memory = "4gb"
 
 [deploy]
   release_command = "alembic upgrade head"

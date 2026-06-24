@@ -27,6 +27,9 @@ RUN pip install --no-cache-dir \
 
 # Step 2 — ML vision stack (everything except segment_anything).
 # torch/torchvision are already satisfied; pip will not reinstall them.
+# timm + huggingface_hub + transformers are needed for RETFound and the skin model.
+# opencv-python-headless is needed for retina preprocessing (cv2).
+# segment_anything is intentionally excluded here — see Step 3.
 RUN pip install --no-cache-dir \
         torchxrayvision \
         scikit-image \

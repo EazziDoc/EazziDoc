@@ -64,11 +64,17 @@ class Settings(BaseSettings):
     CLOUDFLARE_R2_PUBLIC_URL: str = ""
 
     # AI — Report Generation
-    GOOGLE_API_KEY: str = ""
     GROQ_API_KEY: str = ""
 
     # AI — Vision
     HUGGINGFACE_API_KEY: str = ""
+    # Optional: path to a fine-tuned RETFound checkpoint for DR grading.
+    # Without it the backbone is downloaded but classification is skipped.
+    RETFOUND_FINETUNED_PATH: str = ""
+    # LiteMedSAM: R2 object key for lite_medsam.pth (e.g. "models/lite_medsam.pth").
+    # Upload the checkpoint to your R2 bucket then set this Fly secret.
+    # Leave empty to disable the segmentation overlay.
+    MEDSAM_R2_KEY: str = ""
 
     # Email — Resend
     RESEND_API_KEY: str = ""
