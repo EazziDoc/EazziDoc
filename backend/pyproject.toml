@@ -78,6 +78,7 @@ ml = [
     # pyproject.toml cannot specify the index URL, so handle this in Dockerfile.worker.
     "torchxrayvision",
     "scikit-image",
+    "timm",
     # Skin + Retina: served via HuggingFace Inference API — no local model weights needed.
     # MedSAM segmentation overlay: segment-anything (Apache 2.0)
     # Checkpoint must be downloaded separately — set MEDSAM_CHECKPOINT_PATH env var.

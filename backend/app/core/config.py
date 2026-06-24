@@ -69,6 +69,7 @@ class Settings(BaseSettings):
 
     # AI — Vision
     HUGGINGFACE_API_KEY: str = ""
+    RETFOUND_CHECKPOINT_PATH: str = ""
 
     # Email — Resend
     RESEND_API_KEY: str = ""
