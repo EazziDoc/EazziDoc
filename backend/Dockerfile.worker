@@ -11,6 +11,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml .
@@ -24,12 +25,19 @@ RUN pip install --no-cache-dir \
         torch torchvision \
         --index-url https://download.pytorch.org/whl/cpu
 
-# Step 2 — torchxrayvision + scikit-image + segment-anything.
+# Step 2 — ML vision stack.
 # torch/torchvision are already satisfied; pip will not reinstall them.
+# LiteMedSAM branch patches segment_anything to register the vit_t backbone.
+# timm + huggingface_hub + transformers are needed for RETFound and the skin model.
+# opencv-python-headless is needed for retina preprocessing (cv2).
 RUN pip install --no-cache-dir \
         torchxrayvision \
         scikit-image \
-        segment-anything
+        timm \
+        huggingface_hub \
+        transformers \
+        opencv-python-headless \
+        "segment_anything @ git+https://github.com/bowang-lab/MedSAM@LiteMedSAM"
 
 # Step 3 — rest of the application (FastAPI, Celery, DB drivers, etc.)
 # Using prod-no-ml so pip does not re-evaluate the ML group and accidentally
