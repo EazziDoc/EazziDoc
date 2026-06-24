@@ -25,32 +25,31 @@ RUN pip install --no-cache-dir \
         torch torchvision \
         --index-url https://download.pytorch.org/whl/cpu
 
-# Step 2a — Clone LiteMedSAM before pip sees it.
-# pip's VCS backend (git+https://) is unreliable in CI/Docker builder environments —
-# it runs git ls-remote internally and silently marks the source as "(unavailable)"
-# if the subprocess fails for any reason (SSL, rate-limit, missing config).
-# Cloning explicitly gives a clear error if GitHub is unreachable, and lets pip
-# install from a local directory where no further network calls are needed.
-RUN git clone --depth=1 --branch LiteMedSAM \
-        https://github.com/bowang-lab/MedSAM.git /tmp/LiteMedSAM
-
-# Step 2b — ML vision stack.
+# Step 2 — ML vision stack (all packages except segment_anything).
 # torch/torchvision are already satisfied; pip will not reinstall them.
-# LiteMedSAM (installed from the local clone) patches segment_anything to register
-# the vit_t backbone needed by medsam.py.
 # timm + huggingface_hub + transformers are needed for RETFound and the skin model.
 # opencv-python-headless is needed for retina preprocessing (cv2).
+# segment_anything is intentionally excluded here — see Step 3.
 RUN pip install --no-cache-dir \
         torchxrayvision \
         scikit-image \
         timm \
         huggingface_hub \
         transformers \
-        opencv-python-headless \
-        /tmp/LiteMedSAM \
+        opencv-python-headless
+
+# Step 3 — LiteMedSAM (must be the LAST segment_anything install).
+# pip's VCS backend (git+https://) silently marks remote sources as "(unavailable)"
+# in some CI/Docker builder environments. Cloning explicitly is more reliable and
+# gives a clear error if GitHub is unreachable.
+# --force-reinstall ensures the LiteMedSAM fork wins over any standard
+# segment-anything==1.0 that may have been pulled in as a transitive dependency.
+RUN git clone --depth=1 --branch LiteMedSAM \
+        https://github.com/bowang-lab/MedSAM.git /tmp/LiteMedSAM \
+    && pip install --no-cache-dir --force-reinstall /tmp/LiteMedSAM \
     && rm -rf /tmp/LiteMedSAM
 
-# Step 3 — rest of the application (FastAPI, Celery, DB drivers, etc.)
+# Step 4 — rest of the application (FastAPI, Celery, DB drivers, etc.)
 # Using prod-no-ml so pip does not re-evaluate the ML group and accidentally
 # pull the CUDA wheel.
 RUN pip install --no-cache-dir -e ".[prod-no-ml]"
