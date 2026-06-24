@@ -24,7 +24,7 @@ RUN pip install --no-cache-dir \
         torch torchvision \
         --index-url https://download.pytorch.org/whl/cpu
 
-# Step 2 — ML vision stack (all packages except segment_anything).
+# Step 2 — ML vision stack (everything except segment_anything).
 # torch/torchvision are already satisfied; pip will not reinstall them.
 # timm + huggingface_hub + transformers are needed for RETFound and the skin model.
 # opencv-python-headless is needed for retina preprocessing (cv2).
@@ -64,7 +64,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # scikit-image / PIL runtime deps
     libjpeg62-turbo \
     zlib1g \
-    # cv2 (opencv-python-headless) runtime dep
+    # cv2 (opencv-python-headless) needs libGL at runtime despite the name
     libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -77,9 +77,8 @@ COPY alembic.ini .
 
 RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 
-# HuggingFace Hub writes cache and xet logs to $HF_HOME (~/.cache/huggingface by default).
-# System users created with --system have /nonexistent as their home dir, which causes
-# Permission denied errors on first model download. Point HF_HOME to writable /tmp instead.
+# System users have /nonexistent as home; HuggingFace Hub writes cache to
+# ~/.cache/huggingface by default, which causes Permission denied errors.
 ENV HF_HOME=/tmp/huggingface
 
 USER appuser
