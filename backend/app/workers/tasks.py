@@ -77,7 +77,7 @@ async def _run_pipeline(diagnosis_id: str) -> None:
 
         # ── MedSAM segmentation overlay ───────────────────────────────────────
         seg_key = await medsam.segment_and_upload(
-            primary_image_bytes, diagnosis_id, storage_service
+            primary_image_bytes, diagnosis_id, storage_service, modality=modality
         )
 
         # ── report generation (Gemini → Groq fallback) ───────────────────────
