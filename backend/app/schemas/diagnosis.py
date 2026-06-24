@@ -21,7 +21,6 @@ class DiagnosisResponse(BaseModel):
     uploading_doctor_id: uuid.UUID | None = None
     image_keys: list
     modality: str | None
-    model_used: str | None
     confidence_score: float | None
     report: dict
     status: str
