@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from io import BytesIO
 
 from app.core.config import settings
 
@@ -39,7 +38,7 @@ def _sync_analyze(image_bytes: bytes) -> dict | None:
             api_key=settings.HUGGINGFACE_API_KEY,
         )
 
-        results = client.image_classification(BytesIO(image_bytes), model=_MODEL_REPO)
+        results = client.image_classification(image_bytes, model=_MODEL_REPO)
 
         all_findings = {
             r.label: round(r.score, 4) for r in results if r.score >= _CONFIDENCE_THRESHOLD
