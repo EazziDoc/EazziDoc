@@ -84,13 +84,23 @@ def _load_odir_checkpoint():
                 num_classes=0,
                 global_pool="token",  # CLS token → 1024-d
             )
-            self.head = nn.Sequential(
-                nn.Linear(1025, 512),  # 1024 backbone + 1 age scalar
-                nn.BatchNorm1d(512),
-                nn.ReLU(inplace=True),
-                nn.Dropout(0.3),
-                nn.Linear(512, 8),
-            )
+
+            class _Head(nn.Module):
+                def __init__(self):
+                    super().__init__()
+                    # Must be named .mlp so keys match checkpoint: head.mlp.0.*, head.mlp.1.*, etc.
+                    self.mlp = nn.Sequential(
+                        nn.Linear(1025, 512),  # head.mlp.0
+                        nn.BatchNorm1d(512),  # head.mlp.1
+                        nn.ReLU(inplace=True),
+                        nn.Dropout(0.3),
+                        nn.Linear(512, 8),  # head.mlp.4
+                    )
+
+                def forward(self, x: torch.Tensor) -> torch.Tensor:
+                    return self.mlp(x)
+
+            self.head = _Head()
 
         def forward(self, x: torch.Tensor) -> torch.Tensor:
             feat = self.backbone(x)  # [B, 1024]
