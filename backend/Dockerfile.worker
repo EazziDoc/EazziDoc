@@ -35,7 +35,6 @@ RUN pip install --no-cache-dir \
         scikit-image \
         timm \
         huggingface_hub \
-        transformers \
         opencv-python-headless
 
 # Step 3 — LiteMedSAM (installed LAST so it always wins over any standard
