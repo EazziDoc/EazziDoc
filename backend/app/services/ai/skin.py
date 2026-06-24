@@ -31,14 +31,18 @@ def _sync_analyze(image_bytes: bytes) -> dict | None:
         return None
 
     try:
+        from io import BytesIO
+
         from huggingface_hub import InferenceClient
+        from PIL import Image
 
         client = InferenceClient(
             provider="hf-inference",
             api_key=settings.HUGGINGFACE_API_KEY,
         )
 
-        results = client.image_classification(image_bytes, model=_MODEL_REPO)
+        image = Image.open(BytesIO(image_bytes)).convert("RGB")
+        results = client.image_classification(image, model=_MODEL_REPO)
 
         all_findings = {
             r.label: round(r.score, 4) for r in results if r.score >= _CONFIDENCE_THRESHOLD
