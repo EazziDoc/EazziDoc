@@ -79,7 +79,6 @@ ml = [
     "scikit-image",
     "timm",
     "huggingface_hub",
-    "transformers",
     # Skin + Retina: served via HuggingFace Inference API — no local model weights needed.
     # LiteMedSAM segmentation overlay (CVPR 2024, 10x faster than MedSAM).
     # Installs a patched segment_anything package that adds the vit_t registry key.
