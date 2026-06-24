@@ -5,16 +5,18 @@ Generates a coloured segmentation overlay on the primary image and uploads
 it to R2, storing the key in the diagnosis report for the frontend.
 
 Checkpoint: lite_medsam.pth (~30 MB)
-  Download from Google Drive link in:
-  https://github.com/bowang-lab/MedSAM/tree/LiteMedSAM
-  Set MEDSAM_CHECKPOINT_PATH env var to the absolute path of the .pth file.
-  If not set or the file does not exist this service silently skips —
-  the rest of the pipeline continues normally without an overlay.
+  1. Download from Google Drive (link in bowang-lab/MedSAM README, LiteMedSAM branch)
+  2. Upload to your R2 bucket:
+       aws s3 cp lite_medsam.pth s3://<bucket>/models/lite_medsam.pth \\
+         --endpoint-url https://<account-id>.r2.cloudflarestorage.com
+  3. Set the Fly secret:  fly secrets set MEDSAM_R2_KEY=models/lite_medsam.pth
+  The worker downloads the checkpoint to /tmp on first use and caches it in
+  memory for the lifetime of the process. Leave MEDSAM_R2_KEY unset to
+  disable the overlay without affecting the rest of the pipeline.
 
-Dependency: install from the LiteMedSAM branch (registers vit_t in the
-  segment_anything registry):
-    git clone -b LiteMedSAM https://github.com/bowang-lab/MedSAM
-    pip install -e ./MedSAM
+Dependency: install from the LiteMedSAM branch (registers vit_t):
+  git clone -b LiteMedSAM https://github.com/bowang-lab/MedSAM
+  pip install -e ./MedSAM
 
 Modality-aware behaviour:
   - Grayscale modalities (chest_xray, brain_mri, mammography) are stacked to
@@ -30,12 +32,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_CACHE = Path("/tmp/litemedsam/lite_medsam.pth")  # nosec B108
 
 _OVERLAY_ALPHA = 0.40
 
@@ -49,12 +52,36 @@ _MODALITY_COLORS: dict[str, tuple[int, int, int]] = {
 _DEFAULT_COLOR = (255, 100, 50)  # orange-red fallback
 
 
-def _checkpoint_path() -> Path | None:
-    path = os.environ.get("MEDSAM_CHECKPOINT_PATH", "")
-    if not path:
+def _ensure_checkpoint() -> Path | None:
+    """Return the local checkpoint path, downloading from R2 if not cached."""
+    from app.core.config import settings
+
+    if not settings.MEDSAM_R2_KEY:
         return None
-    p = Path(path)
-    return p if p.exists() else None
+
+    if _LOCAL_CACHE.exists():
+        return _LOCAL_CACHE
+
+    try:
+        import boto3
+
+        _LOCAL_CACHE.parent.mkdir(parents=True, exist_ok=True)  # nosec B108
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=f"https://{settings.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+            aws_access_key_id=settings.CLOUDFLARE_R2_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
+            region_name="auto",
+        )
+        logger.info("Downloading LiteMedSAM checkpoint from R2 (%s)…", settings.MEDSAM_R2_KEY)
+        s3.download_file(
+            settings.CLOUDFLARE_R2_BUCKET_NAME, settings.MEDSAM_R2_KEY, str(_LOCAL_CACHE)
+        )
+        logger.info("LiteMedSAM checkpoint ready at %s", _LOCAL_CACHE)
+        return _LOCAL_CACHE
+    except Exception:
+        logger.exception("Failed to download LiteMedSAM checkpoint from R2")
+        return None
 
 
 @lru_cache(maxsize=1)
@@ -105,7 +132,7 @@ def _center_box(h: int, w: int, margin: float = 0.05) -> np.ndarray:
 
 
 def _sync_segment(image_bytes: bytes, modality: str | None) -> bytes | None:
-    ckpt = _checkpoint_path()
+    ckpt = _ensure_checkpoint()
     if ckpt is None:
         return None
 
@@ -142,7 +169,7 @@ def _sync_segment(image_bytes: bytes, modality: str | None) -> bytes | None:
         return buf.getvalue()
 
     except Exception:
-        logger.exception("MedSAM segmentation failed")
+        logger.exception("LiteMedSAM segmentation failed")
         return None
 
 
@@ -154,10 +181,12 @@ async def segment_and_upload(
 ) -> str | None:
     """Segment the primary image and upload the coloured overlay to R2.
 
-    Returns the R2 object key on success, or None if MedSAM is not configured
-    or segmentation fails. The rest of the pipeline is unaffected.
+    Returns the R2 object key on success, or None if LiteMedSAM is not
+    configured or segmentation fails. The rest of the pipeline is unaffected.
     """
-    if _checkpoint_path() is None:
+    from app.core.config import settings
+
+    if not settings.MEDSAM_R2_KEY:
         return None
 
     loop = asyncio.get_event_loop()
@@ -169,8 +198,8 @@ async def segment_and_upload(
     key = f"diagnoses/{diagnosis_id}/seg_overlay.png"
     try:
         await storage.upload(overlay_bytes, key, "image/png")
-        logger.info("MedSAM overlay uploaded → %s", key)
+        logger.info("LiteMedSAM overlay uploaded → %s", key)
         return key
     except Exception:
-        logger.exception("Failed to upload MedSAM overlay for diagnosis %s", diagnosis_id)
+        logger.exception("Failed to upload LiteMedSAM overlay for diagnosis %s", diagnosis_id)
         return None
