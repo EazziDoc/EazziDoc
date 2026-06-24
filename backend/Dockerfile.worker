@@ -11,7 +11,6 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
-    git \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml .
@@ -39,11 +38,11 @@ RUN pip install --no-cache-dir \
 
 # Step 3 — LiteMedSAM (installed LAST so it always wins over any standard
 # segment-anything that may have been pulled in as a transitive dep).
-# Cloning explicitly avoids pip's unreliable VCS backend (git+https://).
-RUN git clone --depth=1 --branch LiteMedSAM \
-        https://github.com/bowang-lab/MedSAM.git /tmp/LiteMedSAM \
-    && pip install --no-cache-dir /tmp/LiteMedSAM \
-    && rm -rf /tmp/LiteMedSAM
+# Using a GitHub tarball URL (plain HTTPS) instead of git clone — Fly's
+# remote builder blocks git protocol during builds, causing the clone to
+# fail silently and leaving the standard PyPI package in place.
+RUN pip install --no-cache-dir \
+        "https://github.com/bowang-lab/MedSAM/archive/refs/heads/LiteMedSAM.tar.gz"
 
 # Step 4 — rest of the application (FastAPI, Celery, DB drivers, etc.)
 # Using prod-no-ml so pip does not re-evaluate the ML group and accidentally
