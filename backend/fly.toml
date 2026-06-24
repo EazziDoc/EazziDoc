@@ -47,7 +47,7 @@ primary_region = "jnb"
 [[vm]]
   processes = ["worker"]
   size = "shared-cpu-2x"
-  memory = "2gb"
+  memory = "4gb"
 
 [deploy]
   release_command = "alembic upgrade head"
