@@ -91,7 +91,7 @@ def _load_odir_checkpoint():
                     # Must be named .mlp so keys match checkpoint: head.mlp.0.*, head.mlp.1.*, etc.
                     self.mlp = nn.Sequential(
                         nn.Linear(1025, 512),  # head.mlp.0
-                        nn.BatchNorm1d(512),  # head.mlp.1
+                        nn.LayerNorm(512),  # head.mlp.1 — no running stats, matches checkpoint
                         nn.ReLU(inplace=True),
                         nn.Dropout(0.3),
                         nn.Linear(512, 8),  # head.mlp.4

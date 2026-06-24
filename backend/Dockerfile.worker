@@ -65,6 +65,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # scikit-image / PIL runtime deps
     libjpeg62-turbo \
     zlib1g \
+    # cv2 (opencv-python-headless) runtime dep
+    libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
