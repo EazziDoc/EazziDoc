@@ -80,6 +80,12 @@ COPY alembic/ ./alembic/
 COPY alembic.ini .
 
 RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+
+# HuggingFace Hub writes cache and xet logs to $HF_HOME (~/.cache/huggingface by default).
+# System users created with --system have /nonexistent as their home dir, which causes
+# Permission denied errors on first model download. Point HF_HOME to writable /tmp instead.
+ENV HF_HOME=/tmp/huggingface
+
 USER appuser
 
 # Single-concurrency worker — one diagnosis at a time to keep memory flat.

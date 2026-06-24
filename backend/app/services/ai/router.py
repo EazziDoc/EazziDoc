@@ -32,6 +32,9 @@ async def run_specialist(image_bytes: bytes, modality: str) -> dict | None:
             from app.services.ai.skin import analyze
 
         result = await analyze(image_bytes)
+        if result is None:
+            logger.warning("Specialist (%s) returned None — continuing without", modality)
+            return None
         logger.info(
             "Specialist (%s) → top: %s (%.0f%%)",
             modality,
