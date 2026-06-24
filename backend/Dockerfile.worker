@@ -11,6 +11,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml .
@@ -24,14 +25,26 @@ RUN pip install --no-cache-dir \
         torch torchvision \
         --index-url https://download.pytorch.org/whl/cpu
 
-# Step 2 — torchxrayvision + scikit-image + segment-anything.
+# Step 2 — ML vision stack (everything except segment_anything).
 # torch/torchvision are already satisfied; pip will not reinstall them.
 RUN pip install --no-cache-dir \
         torchxrayvision \
         scikit-image \
-        segment-anything
+        timm \
+        huggingface_hub \
+        opencv-python-headless
 
-# Step 3 — rest of the application (FastAPI, Celery, DB drivers, etc.)
+# Step 3 — LiteMedSAM fork (installed LAST so it wins over any standard
+# segment-anything pulled in as a transitive dep).
+# The fork registers the vit_t key in sam_model_registry — the PyPI
+# package does not, which is why segmentation overlays were silently skipped.
+# Cloning explicitly avoids pip's unreliable VCS backend (git+https://).
+RUN git clone --depth=1 --branch LiteMedSAM \
+        https://github.com/bowang-lab/MedSAM.git /tmp/LiteMedSAM \
+    && pip install --no-cache-dir /tmp/LiteMedSAM \
+    && rm -rf /tmp/LiteMedSAM
+
+# Step 4 — rest of the application (FastAPI, Celery, DB drivers, etc.)
 # Using prod-no-ml so pip does not re-evaluate the ML group and accidentally
 # pull the CUDA wheel.
 RUN pip install --no-cache-dir -e ".[prod-no-ml]"
@@ -51,6 +64,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # scikit-image / PIL runtime deps
     libjpeg62-turbo \
     zlib1g \
+    # cv2 (opencv-python-headless) needs libGL at runtime despite the name
+    libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
@@ -61,6 +76,11 @@ COPY alembic/ ./alembic/
 COPY alembic.ini .
 
 RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+
+# System users have /nonexistent as home; HuggingFace Hub writes cache to
+# ~/.cache/huggingface by default, which causes Permission denied errors.
+ENV HF_HOME=/tmp/huggingface
+
 USER appuser
 
 # Single-concurrency worker — one diagnosis at a time to keep memory flat.
