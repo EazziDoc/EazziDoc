@@ -1,14 +1,23 @@
-"""RETFound — local retinal fundus disease detection.
+"""RETFound (DINOv2) — local retinal fundus disease detection.
 
-Runs in-process on CPU. Requires the model checkpoint downloaded separately:
-  Set RETFOUND_CHECKPOINT_PATH to the .pth file path.
+Model: YukunZhou/RETFound_dinov2_meh (public HuggingFace Hub)
+Architecture: ViT-L/16 pretrained with DINOv2 SSL on MEH fundus data.
+  patch_size=16, hidden=1024, heads=16, layers=24, global_pool=avg.
+
+IMPORTANT — backbone vs fine-tuned:
+  The HF checkpoint is the pretrained backbone (fine_tuned=false in config.json).
+  It has no classification head, so inference returns None until a downstream
+  fine-tuned checkpoint is provided. Fine-tune with the official script:
+    torchrun main_finetune.py --model RETFound_dinov2 --adaptation finetune ...
+  Then set RETFOUND_FINETUNED_PATH to the resulting checkpoint-best.pth.
 
 Preprocessing pipeline (official RETFound eval + fundus-specific steps):
-  1. Circular FOV crop  — removes black border from fundus camera
-  2. Square crop        — RETFound expects square input
-  3. Ben Graham norm    — removes illumination gradient (highest impact)
+  1. Circular FOV crop  — removes black border produced by fundus cameras
+  2. Square crop        — model expects square input before transform
+  3. Ben Graham norm    — removes illumination gradient (highest-impact step)
   4. CLAHE              — enhances microaneurysms, vessels, haemorrhages
   5. Resize 256 → CenterCrop 224 → ToTensor → ImageNet normalise
+     (RETFound uses ImageNet mean/std, NOT retinal-specific stats)
 """
 
 from __future__ import annotations
@@ -22,38 +31,57 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-_CONFIDENCE_THRESHOLD = 0.05
+_HF_REPO = "YukunZhou/RETFound_dinov2_meh"
+_HF_FILENAME = "RETFound_dinov2_meh.pth"
+_CACHE_DIR = "/tmp/retfound"  # nosec B108
 
-# Diabetic retinopathy grading labels (EYEPACS / APTOS convention).
-# Adjust if your checkpoint was fine-tuned on a different label set.
-_CLASS_LABELS = [
-    "No DR",
-    "Mild DR",
-    "Moderate DR",
-    "Severe DR",
-    "Proliferative DR",
-]
+# EYEPACS / APTOS 5-class DR grading convention
+_CLASS_LABELS = ["No DR", "Mild DR", "Moderate DR", "Severe DR", "Proliferative DR"]
+_CONFIDENCE_THRESHOLD = 0.05
 
 
 @lru_cache(maxsize=1)
 def _load_model():
+    """Returns a ready model, or None if the checkpoint has no classification head."""
     import timm
     import torch
+    from huggingface_hub import hf_hub_download
 
-    checkpoint_path = settings.RETFOUND_CHECKPOINT_PATH
-    if not checkpoint_path:
-        raise RuntimeError("RETFOUND_CHECKPOINT_PATH is not set")
+    # Prefer a locally fine-tuned checkpoint; fall back to the HF backbone
+    finetuned_path = settings.RETFOUND_FINETUNED_PATH
+    if finetuned_path:
+        logger.info("Loading fine-tuned RETFound checkpoint from %s…", finetuned_path)
+        checkpoint_path = finetuned_path
+    else:
+        logger.info("Downloading RETFound backbone from HuggingFace Hub…")
+        checkpoint_path = hf_hub_download(
+            repo_id=_HF_REPO,
+            filename=_HF_FILENAME,
+            cache_dir=_CACHE_DIR,  # nosec B108
+            token=settings.HUGGINGFACE_API_KEY or None,
+        )
 
-    logger.info("Loading RETFound model from %s…", checkpoint_path)
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    state_dict = checkpoint.get("model", checkpoint.get("state_dict", checkpoint))
+
+    # Backbone-only checkpoint: no classification head → outputs are meaningless
+    head_weight = state_dict.get("head.weight")
+    if head_weight is None or head_weight.shape[0] != len(_CLASS_LABELS):
+        logger.warning(
+            "RETFound checkpoint has no %d-class classification head "
+            "(fine_tuned=false). Set RETFOUND_FINETUNED_PATH to a downstream "
+            "fine-tuned checkpoint to enable retinal DR grading.",
+            len(_CLASS_LABELS),
+        )
+        return None
+
+    # ViT-L/16 with global average pooling (matches config.json: patch_size=16)
     model = timm.create_model(
         "vit_large_patch16_224",
         pretrained=False,
         num_classes=len(_CLASS_LABELS),
+        global_pool="avg",
     )
-
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")
-    # Checkpoints may wrap the weights under 'model' or 'state_dict'
-    state_dict = checkpoint.get("model", checkpoint.get("state_dict", checkpoint))
     model.load_state_dict(state_dict, strict=False)
     model.eval()
     logger.info("RETFound model ready")
@@ -103,7 +131,7 @@ def _preprocess(image_bytes: bytes):
     img_lab[:, :, 0] = clahe.apply(img_lab[:, :, 0])
     img_np = cv2.cvtColor(img_lab, cv2.COLOR_LAB2RGB)
 
-    # Step 5: Official RETFound eval transform (ImageNet stats, not retinal-specific)
+    # Step 5: Official RETFound eval transform — ImageNet stats, BICUBIC interpolation
     eval_transform = T.Compose(
         [
             T.Resize(256, interpolation=T.InterpolationMode.BICUBIC),
@@ -121,9 +149,12 @@ def _sync_analyze(image_bytes: bytes) -> dict | None:
 
     try:
         model = _load_model()
-    except RuntimeError as exc:
+    except Exception as exc:
         logger.warning("RETFound not available: %s", exc)
         return None
+
+    if model is None:
+        return None  # backbone-only checkpoint, no DR grading possible
 
     tensor = _preprocess(image_bytes)
 
@@ -144,7 +175,7 @@ def _sync_analyze(image_bytes: bytes) -> dict | None:
     top_finding = max(all_findings, key=all_findings.get)
 
     return {
-        "model": "RETFound-cfp-local",
+        "model": "RETFound-dinov2-meh",
         "top_finding": top_finding,
         "top_confidence": all_findings[top_finding],
         "all_findings": all_findings,

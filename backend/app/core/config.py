@@ -69,7 +69,9 @@ class Settings(BaseSettings):
 
     # AI — Vision
     HUGGINGFACE_API_KEY: str = ""
-    RETFOUND_CHECKPOINT_PATH: str = ""
+    # Optional: path to a fine-tuned RETFound checkpoint for DR grading.
+    # Without it the backbone is downloaded but classification is skipped.
+    RETFOUND_FINETUNED_PATH: str = ""
 
     # Email — Resend
     RESEND_API_KEY: str = ""
