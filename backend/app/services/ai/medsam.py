@@ -86,7 +86,19 @@ def _ensure_checkpoint() -> Path | None:
 
 @lru_cache(maxsize=1)
 def _load_model(checkpoint: str):
-    from segment_anything import SamPredictor, sam_model_registry
+    try:
+        from segment_anything import SamPredictor, sam_model_registry
+    except ImportError:
+        logger.warning("segment_anything not installed — LiteMedSAM disabled")
+        return None
+
+    if "vit_t" not in sam_model_registry:
+        logger.warning(
+            "sam_model_registry has no 'vit_t' key — the standard PyPI segment-anything "
+            "is installed instead of the LiteMedSAM fork. "
+            "Rebuild the worker image with --local-only to enable segmentation overlays."
+        )
+        return None
 
     logger.info("Loading LiteMedSAM from %s…", checkpoint)
     sam = sam_model_registry["vit_t"](checkpoint=checkpoint)
@@ -141,6 +153,9 @@ def _sync_segment(image_bytes: bytes, modality: str | None) -> bytes | None:
         from PIL import Image, ImageFilter
 
         predictor = _load_model(str(ckpt))
+        if predictor is None:
+            return None
+
         img_np = _to_rgb(image_bytes)
         h, w = img_np.shape[:2]
 
