@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from io import BytesIO
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 _MODEL_REPO = "Anwarkh1/Skin_Cancer-Image_Classification"
+_API_URL = f"https://router.huggingface.co/hf-inference/models/{_MODEL_REPO}"
 _CONFIDENCE_THRESHOLD = 0.05
 
 
@@ -31,25 +33,32 @@ def _sync_analyze(image_bytes: bytes) -> dict | None:
         return None
 
     try:
-        from io import BytesIO
-
-        from huggingface_hub import InferenceClient
+        import httpx
         from PIL import Image
 
-        client = InferenceClient(
-            provider="hf-inference",
-            api_key=settings.HUGGINGFACE_API_KEY,
-        )
+        # Normalise to JPEG so the request always carries a known content type.
+        buf = BytesIO()
+        Image.open(BytesIO(image_bytes)).convert("RGB").save(buf, format="JPEG", quality=95)
+        jpeg_bytes = buf.getvalue()
 
-        image = Image.open(BytesIO(image_bytes)).convert("RGB")
-        results = client.image_classification(image, model=_MODEL_REPO)
+        resp = httpx.post(
+            _API_URL,
+            content=jpeg_bytes,
+            headers={
+                "Authorization": f"Bearer {settings.HUGGINGFACE_API_KEY}",
+                "Content-Type": "image/jpeg",
+            },
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        results = resp.json()  # [{"label": str, "score": float}, ...]
 
         all_findings = {
-            r.label: round(r.score, 4) for r in results if r.score >= _CONFIDENCE_THRESHOLD
+            r["label"]: round(r["score"], 4) for r in results if r["score"] >= _CONFIDENCE_THRESHOLD
         }
         if not all_findings:
-            top = max(results, key=lambda r: r.score)
-            all_findings = {top.label: round(top.score, 4)}
+            top = max(results, key=lambda r: r["score"])
+            all_findings = {top["label"]: round(top["score"], 4)}
 
         top_finding = max(all_findings, key=all_findings.get)
 
