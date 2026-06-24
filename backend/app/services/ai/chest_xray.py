@@ -16,8 +16,6 @@ import logging
 from functools import lru_cache
 from io import BytesIO
 
-import numpy as np
-
 logger = logging.getLogger(__name__)
 
 _CONFIDENCE_THRESHOLD = 0.15
@@ -35,6 +33,7 @@ def _load_model():
 
 
 def _sync_analyze(image_bytes: bytes) -> dict:
+    import numpy as np
     import skimage.io
     import torch
     import torchxrayvision as xrv
