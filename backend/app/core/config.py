@@ -64,7 +64,6 @@ class Settings(BaseSettings):
     CLOUDFLARE_R2_PUBLIC_URL: str = ""
 
     # AI — Report Generation
-    GOOGLE_API_KEY: str = ""
     GROQ_API_KEY: str = ""
 
     # AI — Vision

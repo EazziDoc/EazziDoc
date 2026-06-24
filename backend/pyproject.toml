@@ -27,11 +27,10 @@ dependencies = [
     # Storage
     "boto3==1.35.0",
 
-    # AI — report generation (lightweight, just HTTP clients)
+    # AI — report generation
     "groq==0.11.0",
-    "google-generativeai==0.8.3",
     # groq 0.11.0 passes 'proxies' to httpx.Client which was removed in httpx 0.28.
-    # Pin httpx below 0.28 until groq is upgraded.
+    # Pin httpx below 0.28 until groq releases a compatible version.
     "httpx>=0.23.0,<0.28.0",
 
     # Task queue
