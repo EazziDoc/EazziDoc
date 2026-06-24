@@ -113,7 +113,9 @@ def _load_odir_checkpoint():
         cache_dir=_CACHE_DIR,  # nosec B108
         token=settings.HUGGINGFACE_API_KEY or None,
     )
-    ckpt = torch.load(path, map_location="cpu")
+    # weights_only=False: checkpoint contains non-tensor objects (argparse.Namespace etc.)
+    # blocked by PyTorch 2.6+ default. kaavyap/retinal-disease-retfound is trusted.
+    ckpt = torch.load(path, map_location="cpu", weights_only=False)  # nosec B614
     sd = ckpt.get("model_state_dict", ckpt.get("model", ckpt.get("state_dict", ckpt)))
 
     model = _Model()
@@ -142,7 +144,9 @@ def _load_checkpoint(repo_id: str, filename: str, num_classes: int):
         cache_dir=_CACHE_DIR,  # nosec B108
         token=settings.HUGGINGFACE_API_KEY or None,
     )
-    ckpt = torch.load(path, map_location="cpu")
+    # weights_only=False needed: checkpoint contains argparse.Namespace which
+    # PyTorch 2.6+ blocks by default. bswift/RETfound_eyepacs_DR is a trusted source.
+    ckpt = torch.load(path, map_location="cpu", weights_only=False)  # nosec B614
     sd = ckpt.get("model", ckpt.get("model_state_dict", ckpt.get("state_dict", ckpt)))
 
     head = sd.get("head.weight")
