@@ -82,11 +82,12 @@ ml = [
     "huggingface_hub",
     "transformers",
     # Skin + Retina: served via HuggingFace Inference API — no local model weights needed.
-    # MedSAM segmentation overlay: segment-anything (Apache 2.0)
-    # Checkpoint must be downloaded separately — set MEDSAM_CHECKPOINT_PATH env var.
-    # Do NOT include the checkpoint file in the Docker image.
-    # See: https://github.com/bowang-lab/MedSAM
-    "segment-anything",
+    # LiteMedSAM segmentation overlay (CVPR 2024, 10x faster than MedSAM).
+    # Installs a patched segment_anything package that adds the vit_t registry key.
+    # Checkpoint (lite_medsam.pth, ~30 MB) must be downloaded separately —
+    # set MEDSAM_CHECKPOINT_PATH env var. Do NOT bundle the checkpoint in Docker.
+    # See: https://github.com/bowang-lab/MedSAM/tree/LiteMedSAM
+    "segment_anything @ git+https://github.com/bowang-lab/MedSAM@LiteMedSAM",
 ]
 
 # prod: adds gunicorn for multi-worker production serving

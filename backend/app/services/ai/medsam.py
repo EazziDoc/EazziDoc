@@ -1,14 +1,20 @@
-"""MedSAM — medical image segmentation overlay.
+"""LiteMedSAM — medical image segmentation overlay.
 
-Segment Anything Model fine-tuned on medical images (bowang-lab/MedSAM).
+LiteMedSAM (CVPR 2024) — 10× faster than standard MedSAM, TinyViT backbone.
 Generates a coloured segmentation overlay on the primary image and uploads
 it to R2, storing the key in the diagnosis report for the frontend.
 
-Checkpoint: MedSAM ViT-B (~375 MB)
-  Download from: https://github.com/bowang-lab/MedSAM (see README for link)
+Checkpoint: lite_medsam.pth (~30 MB)
+  Download from Google Drive link in:
+  https://github.com/bowang-lab/MedSAM/tree/LiteMedSAM
   Set MEDSAM_CHECKPOINT_PATH env var to the absolute path of the .pth file.
   If not set or the file does not exist this service silently skips —
   the rest of the pipeline continues normally without an overlay.
+
+Dependency: install from the LiteMedSAM branch (registers vit_t in the
+  segment_anything registry):
+    git clone -b LiteMedSAM https://github.com/bowang-lab/MedSAM
+    pip install -e ./MedSAM
 
 Modality-aware behaviour:
   - Grayscale modalities (chest_xray, brain_mri, mammography) are stacked to
@@ -55,11 +61,11 @@ def _checkpoint_path() -> Path | None:
 def _load_model(checkpoint: str):
     from segment_anything import SamPredictor, sam_model_registry
 
-    logger.info("Loading MedSAM from %s…", checkpoint)
-    sam = sam_model_registry["vit_b"](checkpoint=checkpoint)
+    logger.info("Loading LiteMedSAM from %s…", checkpoint)
+    sam = sam_model_registry["vit_t"](checkpoint=checkpoint)
     sam.eval()
     predictor = SamPredictor(sam)
-    logger.info("MedSAM ready")
+    logger.info("LiteMedSAM ready")
     return predictor
 
 
