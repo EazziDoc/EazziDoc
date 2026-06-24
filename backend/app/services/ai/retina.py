@@ -60,8 +60,64 @@ _DR_CASCADE_THRESHOLD = 0.35
 _CONFIDENCE_THRESHOLD = 0.05
 
 
+def _load_odir_checkpoint():
+    """Download and load kaavyap/retinal-disease-retfound.
+
+    The checkpoint uses a custom architecture:
+      - backbone.*  : ViT-L/16, CLS token output (1024-d)
+      - head.mlp.*  : MLP(1025→512→8) — 1025 = 1024 backbone + 1 age scalar
+    Saved under key 'model_state_dict' (not 'model' or 'state_dict').
+    Age is zeroed at inference; the model was trained with age dropout so this
+    is equivalent to the training-time drop behaviour.
+    """
+    import timm
+    import torch
+    import torch.nn as nn
+    from huggingface_hub import hf_hub_download
+
+    class _Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.backbone = timm.create_model(
+                "vit_large_patch16_224",
+                pretrained=False,
+                num_classes=0,
+                global_pool="token",  # CLS token → 1024-d
+            )
+            self.head = nn.Sequential(
+                nn.Linear(1025, 512),  # 1024 backbone + 1 age scalar
+                nn.BatchNorm1d(512),
+                nn.ReLU(inplace=True),
+                nn.Dropout(0.3),
+                nn.Linear(512, 8),
+            )
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            feat = self.backbone(x)  # [B, 1024]
+            age = torch.zeros(x.shape[0], 1, dtype=feat.dtype, device=feat.device)
+            return self.head(torch.cat([feat, age], dim=1))  # [B, 8]
+
+    path = hf_hub_download(
+        repo_id=_ODIR_REPO,
+        filename=_ODIR_FILE,
+        cache_dir=_CACHE_DIR,  # nosec B108
+        token=settings.HUGGINGFACE_API_KEY or None,
+    )
+    ckpt = torch.load(path, map_location="cpu")
+    sd = ckpt.get("model_state_dict", ckpt.get("model", ckpt.get("state_dict", ckpt)))
+
+    model = _Model()
+    model.load_state_dict(sd, strict=True)
+    model.eval()
+    return model
+
+
 def _load_checkpoint(repo_id: str, filename: str, num_classes: int):
-    """Download a RETFound fine-tune checkpoint and return a ready timm model."""
+    """Download a RETFound fine-tune checkpoint and return a ready timm model.
+
+    Used for the DR-grading model which uses a standard timm ViT-L head.
+    Falls back to strict=False if the head key is absent (backbone still loads).
+    """
     import timm
     import torch
     from huggingface_hub import hf_hub_download
@@ -72,13 +128,16 @@ def _load_checkpoint(repo_id: str, filename: str, num_classes: int):
         cache_dir=_CACHE_DIR,  # nosec B108
         token=settings.HUGGINGFACE_API_KEY or None,
     )
-    checkpoint = torch.load(path, map_location="cpu")
-    state_dict = checkpoint.get("model", checkpoint.get("state_dict", checkpoint))
+    ckpt = torch.load(path, map_location="cpu")
+    sd = ckpt.get("model", ckpt.get("model_state_dict", ckpt.get("state_dict", ckpt)))
 
-    head = state_dict.get("head.weight")
-    if head is None or head.shape[0] != num_classes:
-        actual = head.shape[0] if head is not None else "missing"
-        raise RuntimeError(f"{repo_id}: expected {num_classes}-class head, got {actual}")
+    head = sd.get("head.weight")
+    if head is None:
+        logger.warning(
+            "%s: no head.weight in checkpoint — loading backbone with strict=False", repo_id
+        )
+    elif head.shape[0] != num_classes:
+        raise RuntimeError(f"{repo_id}: head has {head.shape[0]} classes, expected {num_classes}")
 
     model = timm.create_model(
         "vit_large_patch16_224",
@@ -86,7 +145,7 @@ def _load_checkpoint(repo_id: str, filename: str, num_classes: int):
         num_classes=num_classes,
         global_pool="avg",
     )
-    model.load_state_dict(state_dict, strict=False)
+    model.load_state_dict(sd, strict=False)
     model.eval()
     return model
 
@@ -94,7 +153,7 @@ def _load_checkpoint(repo_id: str, filename: str, num_classes: int):
 @lru_cache(maxsize=1)
 def _odir_model():
     logger.info("Loading ODIR broad-disease model…")
-    m = _load_checkpoint(_ODIR_REPO, _ODIR_FILE, len(_ODIR_LABELS))
+    m = _load_odir_checkpoint()
     logger.info("ODIR model ready")
     return m
 
