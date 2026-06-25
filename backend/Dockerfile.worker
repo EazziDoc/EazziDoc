@@ -24,25 +24,22 @@ RUN pip install --no-cache-dir \
         torch torchvision \
         --index-url https://download.pytorch.org/whl/cpu
 
-# Step 2 — ML vision stack (everything except segment_anything).
+
+# Step 2 — ML vision stack.
 # torch/torchvision are already satisfied; pip will not reinstall them.
-# timm + huggingface_hub + transformers are needed for RETFound and the skin model.
+# timm + huggingface_hub are needed for RETFound and the skin model.
 # opencv-python-headless is needed for retina preprocessing (cv2).
-# segment_anything is intentionally excluded here — see Step 3.
+# segment_anything (standard PyPI): provides MaskDecoder, PromptEncoder,
+#   TwoWayTransformer used by LiteMedSAM. We do NOT need the LiteMedSAM fork
+#   because medsam.py builds MedSAM_Lite directly from these components +
+#   the local tiny_vit_sam.py — sam_model_registry["vit_t"] is never used.
 RUN pip install --no-cache-dir \
         torchxrayvision \
         scikit-image \
         timm \
         huggingface_hub \
-        opencv-python-headless
-
-# Step 3 — LiteMedSAM (installed LAST so it always wins over any standard
-# segment-anything that may have been pulled in as a transitive dep).
-# Using a GitHub tarball URL (plain HTTPS) instead of git clone — Fly's
-# remote builder blocks git protocol during builds, causing the clone to
-# fail silently and leaving the standard PyPI package in place.
-RUN pip install --no-cache-dir \
-        "https://github.com/bowang-lab/MedSAM/archive/refs/heads/LiteMedSAM.tar.gz"
+        opencv-python-headless \
+        segment_anything
 
 # Step 4 — rest of the application (FastAPI, Celery, DB drivers, etc.)
 # Using prod-no-ml so pip does not re-evaluate the ML group and accidentally

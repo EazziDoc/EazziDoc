@@ -81,11 +81,10 @@ ml = [
     "huggingface_hub",
     # Skin + Retina: served via HuggingFace Inference API — no local model weights needed.
     # LiteMedSAM segmentation overlay (CVPR 2024, 10x faster than MedSAM).
-    # Installs a patched segment_anything package that adds the vit_t registry key.
-    # Checkpoint (lite_medsam.pth, ~30 MB) must be downloaded separately —
-    # set MEDSAM_CHECKPOINT_PATH env var. Do NOT bundle the checkpoint in Docker.
-    # See: https://github.com/bowang-lab/MedSAM/tree/LiteMedSAM
-    "segment_anything @ git+https://github.com/bowang-lab/MedSAM@LiteMedSAM",
+    # Uses standard PyPI segment_anything + local tiny_vit_sam.py.
+    # MedSAM_Lite is built directly from TinyViT + PromptEncoder + MaskDecoder;
+    # sam_model_registry["vit_t"] is NOT used, so the fork is not required.
+    "segment_anything",
 ]
 
 # prod: adds gunicorn for multi-worker production serving
