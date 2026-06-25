@@ -14,9 +14,10 @@ Checkpoint: lite_medsam.pth (~30 MB)
   memory for the lifetime of the process. Leave MEDSAM_R2_KEY unset to
   disable the overlay without affecting the rest of the pipeline.
 
-Dependency: install from the LiteMedSAM branch (registers vit_t):
-  git clone -b LiteMedSAM https://github.com/bowang-lab/MedSAM
-  pip install -e ./MedSAM
+Dependency: standard PyPI segment_anything + local tiny_vit_sam.py.
+  MedSAM_Lite is constructed directly from TinyViT + PromptEncoder +
+  MaskDecoder — sam_model_registry is NOT used. This avoids the
+  vit_t registration that only exists in the LiteMedSAM fork.
 
 Modality-aware behaviour:
   - Grayscale modalities (chest_xray, brain_mri, mammography) are stacked to
@@ -86,29 +87,113 @@ def _ensure_checkpoint() -> Path | None:
 
 @lru_cache(maxsize=1)
 def _load_model(checkpoint: str):
+    """Build and load MedSAM_Lite directly from TinyViT + SAM components.
+
+    Does NOT use sam_model_registry["vit_t"]. The standard PyPI
+    segment_anything package is sufficient — only MaskDecoder, PromptEncoder,
+    and TwoWayTransformer are needed from it. TinyViT is imported from the
+    local tiny_vit_sam.py (shipped with the repo).
+    """
     try:
-        from segment_anything import SamPredictor, sam_model_registry
-    except ImportError:
-        logger.warning("segment_anything not installed — LiteMedSAM disabled")
+        import torch
+        import torch.nn as nn
+        import torch.nn.functional as F
+        from segment_anything.modeling import MaskDecoder, PromptEncoder, TwoWayTransformer
+
+        from app.services.ai.tiny_vit_sam import TinyViT
+    except ImportError as e:
+        logger.warning("LiteMedSAM dependencies not available — segmentation disabled: %s", e)
         return None
 
-    if "vit_t" not in sam_model_registry:
-        logger.warning(
-            "sam_model_registry has no 'vit_t' key — the standard PyPI segment-anything "
-            "is installed instead of the LiteMedSAM fork. "
-            "Rebuild the worker image with --local-only to enable segmentation overlays."
+    class MedSAM_Lite(nn.Module):
+        def __init__(self, image_encoder, mask_decoder, prompt_encoder):
+            super().__init__()
+            self.image_encoder = image_encoder
+            self.mask_decoder = mask_decoder
+            self.prompt_encoder = prompt_encoder
+
+        def forward(self, image, box_np):
+            image_embedding = self.image_encoder(image)
+            with torch.no_grad():
+                box_torch = torch.as_tensor(box_np, dtype=torch.float32, device=image.device)
+                if len(box_torch.shape) == 2:
+                    box_torch = box_torch[:, None, :]
+            sparse_embeddings, dense_embeddings = self.prompt_encoder(
+                points=None,
+                boxes=box_np,
+                masks=None,
+            )
+            low_res_masks, _ = self.mask_decoder(
+                image_embeddings=image_embedding,
+                image_pe=self.prompt_encoder.get_dense_pe(),
+                sparse_prompt_embeddings=sparse_embeddings,
+                dense_prompt_embeddings=dense_embeddings,
+                multimask_output=False,
+            )
+            return low_res_masks
+
+        @torch.no_grad()
+        def postprocess_masks(self, masks, new_size, original_size):
+            masks = masks[..., : new_size[0], : new_size[1]]
+            masks = F.interpolate(
+                masks,
+                size=(original_size[0], original_size[1]),
+                mode="bilinear",
+                align_corners=False,
+            )
+            return masks
+
+    try:
+        image_encoder = TinyViT(
+            img_size=256,
+            in_chans=3,
+            embed_dims=[64, 128, 160, 320],
+            depths=[2, 2, 6, 2],
+            num_heads=[2, 4, 5, 10],
+            window_sizes=[7, 7, 14, 7],
+            mlp_ratio=4.0,
+            drop_rate=0.0,
+            drop_path_rate=0.0,
+            use_checkpoint=False,
+            mbconv_expand_ratio=4.0,
+            local_conv_size=3,
+            layer_lr_decay=0.8,
         )
+        prompt_encoder = PromptEncoder(
+            embed_dim=256,
+            image_embedding_size=(64, 64),
+            input_image_size=(256, 256),
+            mask_in_chans=16,
+        )
+        mask_decoder = MaskDecoder(
+            num_multimask_outputs=3,
+            transformer=TwoWayTransformer(
+                depth=2,
+                embedding_dim=256,
+                mlp_dim=2048,
+                num_heads=8,
+            ),
+            transformer_dim=256,
+            iou_head_depth=3,
+            iou_head_hidden_dim=256,
+        )
+        model = MedSAM_Lite(
+            image_encoder=image_encoder,
+            mask_decoder=mask_decoder,
+            prompt_encoder=prompt_encoder,
+        )
+        # lite_medsam.pth is a state dict from a trusted source
+        ckpt = torch.load(checkpoint, map_location="cpu", weights_only=False)  # nosec B614
+        model.load_state_dict(ckpt)
+        model.eval()
+        logger.info("LiteMedSAM ready (TinyViT backbone, checkpoint=%s)", checkpoint)
+        return model
+    except Exception:
+        logger.exception("Failed to load LiteMedSAM model")
         return None
 
-    logger.info("Loading LiteMedSAM from %s…", checkpoint)
-    sam = sam_model_registry["vit_t"](checkpoint=checkpoint)
-    sam.eval()
-    predictor = SamPredictor(sam)
-    logger.info("LiteMedSAM ready")
-    return predictor
 
-
-def _to_rgb(image_bytes: bytes) -> np.ndarray:
+def _to_rgb(image_bytes: bytes):
     """Convert any medical image to a uint8 [H, W, 3] RGB array.
 
     Grayscale images (chest X-ray, brain MRI, mammography exported as L/I/F)
@@ -125,49 +210,53 @@ def _to_rgb(image_bytes: bytes) -> np.ndarray:
     return np.array(img.convert("RGB"), dtype=np.uint8)
 
 
-def _center_box(h: int, w: int, margin: float = 0.05) -> np.ndarray:
-    """Bounding box covering the central (1 − 2·margin) fraction of the image.
-
-    Using the full image [0, 0, w, h] includes scanner borders and annotation
-    artefacts. A 5 % margin focuses the prompt on the clinical content.
-    """
-    import numpy as np
-
-    return np.array(
-        [
-            int(w * margin),
-            int(h * margin),
-            int(w * (1.0 - margin)),
-            int(h * (1.0 - margin)),
-        ]
-    )
-
-
 def _sync_segment(image_bytes: bytes, modality: str | None) -> bytes | None:
     ckpt = _ensure_checkpoint()
     if ckpt is None:
         return None
 
     try:
+        import cv2
         import numpy as np
+        import torch
         from PIL import Image, ImageFilter
 
-        predictor = _load_model(str(ckpt))
-        if predictor is None:
+        model = _load_model(str(ckpt))
+        if model is None:
             return None
 
         img_np = _to_rgb(image_bytes)
-        h, w = img_np.shape[:2]
+        H, W = img_np.shape[:2]
 
-        predictor.set_image(img_np)
+        # Resize longest side to 256, pad to 256×256 (official LiteMedSAM pipeline)
+        scale = 256.0 / max(H, W)
+        newh, neww = int(H * scale + 0.5), int(W * scale + 0.5)
+        img_256 = cv2.resize(img_np, (neww, newh), interpolation=cv2.INTER_AREA)
+        img_256_norm = (img_256 - img_256.min()) / max(float(img_256.max() - img_256.min()), 1e-8)
+        img_256_padded = np.pad(img_256_norm, ((0, 256 - newh), (0, 256 - neww), (0, 0)))
+        img_tensor = torch.tensor(img_256_padded).float().permute(2, 0, 1).unsqueeze(0)
 
-        box = _center_box(h, w, margin=0.05)
-        masks, scores, _ = predictor.predict(box=box, multimask_output=True)
-        best_mask = masks[scores.argmax()]
+        # Central-90% bounding box at 256 scale
+        margin = 0.05
+        box256 = np.array(
+            [
+                [
+                    int(256 * margin),
+                    int(256 * margin),
+                    int(256 * (1 - margin)),
+                    int(256 * (1 - margin)),
+                ]
+            ]
+        )
+
+        with torch.no_grad():
+            low_res_masks = model(img_tensor, box256)
+            masks = model.postprocess_masks(low_res_masks, (newh, neww), (H, W))
+            best_mask = (torch.sigmoid(masks[0, 0]) > 0.5).numpy()
 
         color = _MODALITY_COLORS.get(modality or "", _DEFAULT_COLOR)
 
-        # Semi-transparent fill over the segmented region
+        # Semi-transparent fill over segmented region
         overlay = np.zeros((*img_np.shape[:2], 4), dtype=np.uint8)
         overlay[best_mask] = [*color, int(255 * _OVERLAY_ALPHA)]
 
