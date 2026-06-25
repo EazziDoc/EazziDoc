@@ -124,6 +124,7 @@ def _load_odir_checkpoint():
         logger.warning("ODIR checkpoint missing keys: %s", missing)
     if unexpected:
         logger.warning("ODIR checkpoint unexpected keys: %s", unexpected)
+    model.half()  # float16 — halves steady-state RAM (~1.2 GB → ~600 MB)
     model.eval()
     return model
 
@@ -157,15 +158,27 @@ def _load_checkpoint(repo_id: str, filename: str, num_classes: int):
     elif head.shape[0] != num_classes:
         raise RuntimeError(f"{repo_id}: head has {head.shape[0]} classes, expected {num_classes}")
 
+    # Detect the image size the checkpoint was trained on from pos_embed shape.
+    # pos_embed: [1, N+1, 1024] where N = (img_size / patch_size)².
+    # Standard RETFound (224px) → N=196 → 197 tokens.
+    # bswift EYEPACS fine-tune (256px) → N=256 → 257 tokens.
+    pe = sd.get("pos_embed")
+    if pe is not None and pe.shape[1] == 257:
+        img_size = 256  # 16×16 patches of size 16 → 256×256 input
+    else:
+        img_size = 224
+
     model = timm.create_model(
         "vit_large_patch16_224",
         pretrained=False,
         num_classes=num_classes,
         global_pool="avg",
+        img_size=img_size,
     )
     model.load_state_dict(sd, strict=False)
+    model.half()  # float16 — halves steady-state RAM (~1.2 GB → ~600 MB)
     model.eval()
-    return model
+    return model, img_size
 
 
 @lru_cache(maxsize=1)
@@ -179,13 +192,18 @@ def _odir_model():
 @lru_cache(maxsize=1)
 def _dr_model():
     logger.info("Loading EYEPACS DR-grading model…")
-    m = _load_checkpoint(_DR_REPO, _DR_FILE, len(_DR_LABELS))
-    logger.info("DR-grading model ready")
-    return m
+    m, img_size = _load_checkpoint(_DR_REPO, _DR_FILE, len(_DR_LABELS))
+    logger.info("DR-grading model ready (img_size=%d)", img_size)
+    return m, img_size
 
 
-def _preprocess(image_bytes: bytes):
-    """Shared 5-step fundus preprocessing pipeline."""
+def _preprocess(image_bytes: bytes, img_size: int = 224):
+    """5-step fundus preprocessing pipeline.
+
+    img_size controls the final crop: 224 for ODIR (standard RETFound),
+    256 for models fine-tuned at that resolution (e.g. bswift EYEPACS DR).
+    Steps 1–4 are image-size agnostic; only the final transform differs.
+    """
     import cv2
     import numpy as np
     import torchvision.transforms as T
@@ -227,23 +245,28 @@ def _preprocess(image_bytes: bytes):
     img_lab[:, :, 0] = clahe.apply(img_lab[:, :, 0])
     img_np = cv2.cvtColor(img_lab, cv2.COLOR_LAB2RGB)
 
-    # Step 5: Official RETFound eval transform (ImageNet stats, BICUBIC)
+    # Step 5: RETFound eval transform — resize to img_size+32 then centre-crop
+    resize_to = max(img_size + 32, 256)
     transform = T.Compose(
         [
-            T.Resize(256, interpolation=T.InterpolationMode.BICUBIC),
-            T.CenterCrop(224),
+            T.Resize(resize_to, interpolation=T.InterpolationMode.BICUBIC),
+            T.CenterCrop(img_size),
             T.ToTensor(),
             T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ]
     )
-    return transform(Image.fromarray(img_np)).unsqueeze(0)  # [1, 3, 224, 224]
+    return transform(Image.fromarray(img_np)).unsqueeze(0)  # [1, 3, img_size, img_size]
 
 
 def _infer(model, tensor, labels: list[str]) -> dict[str, float]:
     import torch
 
     with torch.no_grad():
-        probs = torch.softmax(model(tensor)[0], dim=0).tolist()
+        # Cast input to float16 to match the model weights.
+        # Promote logits back to float32 before softmax — float16 has limited
+        # dynamic range and can produce inaccurate probabilities for small values.
+        logits = model(tensor.half())[0].float()
+        probs = torch.softmax(logits, dim=0).tolist()
     return {label: round(prob, 4) for label, prob in zip(labels, probs)}
 
 
@@ -254,7 +277,7 @@ def _sync_analyze(image_bytes: bytes) -> dict | None:
         logger.warning("ODIR model unavailable: %s", exc)
         return None
 
-    tensor = _preprocess(image_bytes)
+    tensor = _preprocess(image_bytes, img_size=224)
     odir_probs = _infer(stage1, tensor, _ODIR_LABELS)
     diabetes_prob = odir_probs.get("Diabetes", 0.0)
 
@@ -262,7 +285,9 @@ def _sync_analyze(image_bytes: bytes) -> dict | None:
     dr_grading: dict | None = None
     if diabetes_prob >= _DR_CASCADE_THRESHOLD:
         try:
-            dr_probs = _infer(_dr_model(), tensor, _DR_LABELS)
+            dr_model, dr_img_size = _dr_model()
+            dr_tensor = _preprocess(image_bytes, img_size=dr_img_size)
+            dr_probs = _infer(dr_model, dr_tensor, _DR_LABELS)
             top_grade = max(dr_probs, key=dr_probs.get)
             dr_grading = {
                 "top_grade": top_grade,
@@ -278,17 +303,30 @@ def _sync_analyze(image_bytes: bytes) -> dict | None:
         except Exception as exc:
             logger.warning("DR-grading model unavailable: %s", exc)
 
-    # Top finding: use DR grade when cascade ran and found actual disease;
-    # otherwise fall back to the highest-confidence ODIR class.
+    # Top finding: when DR cascade ran and found actual disease, compare its
+    # confidence against the highest non-Diabetes ODIR class and report whichever
+    # is more confident. This prevents a Mild NPDR at 45% from burying a
+    # Glaucoma finding at 63% just because the cascade fired.
+    visible_odir = {k: v for k, v in odir_probs.items() if v >= _CONFIDENCE_THRESHOLD}
+    if not visible_odir:
+        visible_odir = {max(odir_probs, key=odir_probs.get): max(odir_probs.values())}
+
     if dr_grading and dr_grading["top_grade"] != "No DR":
-        top_finding = dr_grading["top_grade"]
-        top_confidence = dr_grading["grade_confidence"]
+        dr_top = dr_grading["top_grade"]
+        dr_conf = dr_grading["grade_confidence"]
+        # Best ODIR finding that isn't Diabetes (Diabetes is already captured by DR grading)
+        odir_non_diabetes = {k: v for k, v in visible_odir.items() if k != "Diabetes"}
+        odir_top = max(odir_non_diabetes, key=odir_non_diabetes.get) if odir_non_diabetes else None
+        odir_top_conf = odir_non_diabetes[odir_top] if odir_top else 0.0
+        if odir_top and odir_top_conf > dr_conf:
+            top_finding = odir_top
+            top_confidence = odir_top_conf
+        else:
+            top_finding = dr_top
+            top_confidence = dr_conf
     else:
-        visible = {k: v for k, v in odir_probs.items() if v >= _CONFIDENCE_THRESHOLD}
-        if not visible:
-            visible = {max(odir_probs, key=odir_probs.get): max(odir_probs.values())}
-        top_finding = max(visible, key=visible.get)
-        top_confidence = visible[top_finding]
+        top_finding = max(visible_odir, key=visible_odir.get)
+        top_confidence = visible_odir[top_finding]
 
     result: dict = {
         "model": "RETFound-cascade (ODIR + EYEPACS-DR)",
