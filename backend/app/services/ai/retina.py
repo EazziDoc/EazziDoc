@@ -124,6 +124,7 @@ def _load_odir_checkpoint():
         logger.warning("ODIR checkpoint missing keys: %s", missing)
     if unexpected:
         logger.warning("ODIR checkpoint unexpected keys: %s", unexpected)
+    model.half()  # float16 — halves steady-state RAM (~1.2 GB → ~600 MB)
     model.eval()
     return model
 
@@ -175,6 +176,7 @@ def _load_checkpoint(repo_id: str, filename: str, num_classes: int):
         img_size=img_size,
     )
     model.load_state_dict(sd, strict=False)
+    model.half()  # float16 — halves steady-state RAM (~1.2 GB → ~600 MB)
     model.eval()
     return model, img_size
 
@@ -260,7 +262,11 @@ def _infer(model, tensor, labels: list[str]) -> dict[str, float]:
     import torch
 
     with torch.no_grad():
-        probs = torch.softmax(model(tensor)[0], dim=0).tolist()
+        # Cast input to float16 to match the model weights.
+        # Promote logits back to float32 before softmax — float16 has limited
+        # dynamic range and can produce inaccurate probabilities for small values.
+        logits = model(tensor.half())[0].float()
+        probs = torch.softmax(logits, dim=0).tolist()
     return {label: round(prob, 4) for label, prob in zip(labels, probs)}
 
 
