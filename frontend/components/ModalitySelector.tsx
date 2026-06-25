@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, Brain, Eye, Layers, Scan } from "lucide-react";
+import { Activity, Eye, Scan } from "lucide-react";
 
 const MODALITIES = [
   {
@@ -26,22 +26,6 @@ const MODALITIES = [
     Icon: Activity,
     color: "text-rose-600 bg-rose-50",
     selectedColor: "border-rose-500 bg-rose-50",
-  },
-  {
-    key: "brain_mri",
-    label: "Brain MRI",
-    description: "Analyses structural MRI scans for neurological findings.",
-    Icon: Brain,
-    color: "text-amber-600 bg-amber-50",
-    selectedColor: "border-amber-500 bg-amber-50",
-  },
-  {
-    key: "mammography",
-    label: "Mammography",
-    description: "Reviews breast imaging for masses, calcifications, and density patterns.",
-    Icon: Layers,
-    color: "text-teal-600 bg-teal-50",
-    selectedColor: "border-teal-500 bg-teal-50",
   },
 ];
 
