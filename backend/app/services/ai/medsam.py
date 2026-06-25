@@ -120,7 +120,7 @@ def _load_model(checkpoint: str):
                     box_torch = box_torch[:, None, :]
             sparse_embeddings, dense_embeddings = self.prompt_encoder(
                 points=None,
-                boxes=box_np,
+                boxes=box_torch,
                 masks=None,
             )
             low_res_masks, _ = self.mask_decoder(
