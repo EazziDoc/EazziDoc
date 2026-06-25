@@ -278,17 +278,30 @@ def _sync_analyze(image_bytes: bytes) -> dict | None:
         except Exception as exc:
             logger.warning("DR-grading model unavailable: %s", exc)
 
-    # Top finding: use DR grade when cascade ran and found actual disease;
-    # otherwise fall back to the highest-confidence ODIR class.
+    # Top finding: when DR cascade ran and found actual disease, compare its
+    # confidence against the highest non-Diabetes ODIR class and report whichever
+    # is more confident. This prevents a Mild NPDR at 45% from burying a
+    # Glaucoma finding at 63% just because the cascade fired.
+    visible_odir = {k: v for k, v in odir_probs.items() if v >= _CONFIDENCE_THRESHOLD}
+    if not visible_odir:
+        visible_odir = {max(odir_probs, key=odir_probs.get): max(odir_probs.values())}
+
     if dr_grading and dr_grading["top_grade"] != "No DR":
-        top_finding = dr_grading["top_grade"]
-        top_confidence = dr_grading["grade_confidence"]
+        dr_top = dr_grading["top_grade"]
+        dr_conf = dr_grading["grade_confidence"]
+        # Best ODIR finding that isn't Diabetes (Diabetes is already captured by DR grading)
+        odir_non_diabetes = {k: v for k, v in visible_odir.items() if k != "Diabetes"}
+        odir_top = max(odir_non_diabetes, key=odir_non_diabetes.get) if odir_non_diabetes else None
+        odir_top_conf = odir_non_diabetes[odir_top] if odir_top else 0.0
+        if odir_top and odir_top_conf > dr_conf:
+            top_finding = odir_top
+            top_confidence = odir_top_conf
+        else:
+            top_finding = dr_top
+            top_confidence = dr_conf
     else:
-        visible = {k: v for k, v in odir_probs.items() if v >= _CONFIDENCE_THRESHOLD}
-        if not visible:
-            visible = {max(odir_probs, key=odir_probs.get): max(odir_probs.values())}
-        top_finding = max(visible, key=visible.get)
-        top_confidence = visible[top_finding]
+        top_finding = max(visible_odir, key=visible_odir.get)
+        top_confidence = visible_odir[top_finding]
 
     result: dict = {
         "model": "RETFound-cascade (ODIR + EYEPACS-DR)",
