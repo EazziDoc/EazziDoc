@@ -76,11 +76,21 @@ class Settings(BaseSettings):
     # Leave empty to disable the segmentation overlay.
     MEDSAM_R2_KEY: str = ""
 
-    # Email — Resend
-    RESEND_API_KEY: str = ""
-    SMTP_FROM: str = "EazziDoc <onboarding@resend.dev>"
+    # Email — SMTP
+    # Set SMTP_HOST to enable email. Leave empty to run without email (dev/test).
+    # TLS (port 587 STARTTLS) and SSL (port 465) are both supported.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_USE_SSL: bool = False  # True = implicit SSL (port 465); False = STARTTLS (port 587)
+    SMTP_FROM: str = "EazziDoc <noreply@eazzidoc.com>"
     REPORT_EMAIL_BCC: str = ""
+    SUPPORT_EMAIL: str = ""  # Where contact-form messages are delivered; falls back to SMTP_USER
     FRONTEND_URL: str = "http://localhost:3000"
+
+    # Password reset
+    PASSWORD_RESET_EXPIRE_MINUTES: int = 30
 
     # Rate limiting
     RATELIMIT_ENABLED: bool = True

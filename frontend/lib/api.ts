@@ -635,3 +635,28 @@ export async function adminRejectPatientIdentity(userId: string, reason: string)
 export async function adminGetIdentityDocumentUrl(userId: string) {
   return req<{ url: string }>(`/admin/users/${userId}/identity-document`);
 }
+
+// ── password reset ────────────────────────────────────────────────────────────
+
+export async function forgotPassword(email: string) {
+  return req<void>("/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function resetPassword(token: string, password: string) {
+  return req<void>("/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ token, password }),
+  });
+}
+
+// ── support / contact form ────────────────────────────────────────────────────
+
+export async function submitSupportRequest(data: { subject: string; message: string }) {
+  return req<{ sent: boolean; message: string }>("/support/contact", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}

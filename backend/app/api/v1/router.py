@@ -8,6 +8,7 @@ from app.api.v1.gdpr import router as gdpr_router
 from app.api.v1.messaging import router as messaging_router
 from app.api.v1.patients import router as patients_router
 from app.api.v1.payments import router as payments_router
+from app.api.v1.support import router as support_router
 from app.api.v1.uploads import router as uploads_router
 
 router = APIRouter()
@@ -20,3 +21,4 @@ router.include_router(payments_router)
 router.include_router(messaging_router)
 router.include_router(gdpr_router)
 router.include_router(admin_router)
+router.include_router(support_router)
