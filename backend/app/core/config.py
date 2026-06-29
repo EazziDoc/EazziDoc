@@ -76,11 +76,21 @@ class Settings(BaseSettings):
     # Leave empty to disable the segmentation overlay.
     MEDSAM_R2_KEY: str = ""
 
-    # Email — Resend
-    RESEND_API_KEY: str = ""
-    SMTP_FROM: str = "EazziDoc <onboarding@resend.dev>"
+    # Email — SMTP
+    # Set SMTP_HOST to enable email. Leave empty to run without email (dev/test).
+    # TLS (port 587 STARTTLS) and SSL (port 465) are both supported.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_USE_SSL: bool = False  # True = implicit SSL (port 465); False = STARTTLS (port 587)
+    SMTP_FROM: str = "EazziDoc <noreply@eazzidoc.com>"
     REPORT_EMAIL_BCC: str = ""
+    SUPPORT_EMAIL: str = ""  # Where contact-form messages are delivered; falls back to SMTP_USER
     FRONTEND_URL: str = "http://localhost:3000"
+
+    # Password reset
+    PASSWORD_RESET_EXPIRE_MINUTES: int = 30
 
     # Rate limiting
     RATELIMIT_ENABLED: bool = True
@@ -95,11 +105,10 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET: str = ""
     CONSULTATION_FEE_CENTS: int = 5000  # $50.00
 
-    # CORS — extend via BACKEND_CORS_ORIGINS env var / Fly secret for additional origins
-    BACKEND_CORS_ORIGINS: list[str] = [
-        "http://localhost:3000",
-        "https://eazzi-doc.vercel.app",
-    ]
+    # CORS — set via BACKEND_CORS_ORIGINS Fly secret in production.
+    # Local dev default keeps http://localhost:3000 so the frontend works without env vars.
+    # Production must set this explicitly (e.g. https://eazzidoc.app,https://www.eazzidoc.app).
+    BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000"]
 
     @property
     def is_production(self) -> bool:

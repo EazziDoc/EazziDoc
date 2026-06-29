@@ -5,6 +5,7 @@ import {
   Calendar,
   ClipboardList,
   FileText,
+  HelpCircle,
   Home,
   LogOut,
   Settings,
@@ -28,6 +29,7 @@ const patientLinks = [
   { href: "/patient/appointments", label: "Appointments", icon: Calendar },
   { href: "/patient/doctors", label: "Find a Doctor", icon: Stethoscope },
   { href: "/patient/settings", label: "Settings", icon: Settings },
+  { href: "/patient/support", label: "Contact Support", icon: HelpCircle },
 ];
 
 const doctorLinks = [
@@ -36,6 +38,7 @@ const doctorLinks = [
   { href: "/doctor/appointments", label: "Appointments", icon: Calendar },
   { href: "/doctor/patients", label: "My Patients", icon: UserCheck },
   { href: "/doctor/settings", label: "Settings", icon: Settings },
+  { href: "/doctor/support", label: "Contact Support", icon: HelpCircle },
 ];
 
 const adminLinks = [

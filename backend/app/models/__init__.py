@@ -2,6 +2,7 @@ from app.models.appointment import Appointment
 from app.models.audit_log import AuditLog
 from app.models.diagnosis import Diagnosis
 from app.models.doctor import Doctor
+from app.models.password_reset_token import PasswordResetToken
 from app.models.patient import Patient
 from app.models.payment import Payment
 from app.models.refresh_token import RefreshToken
@@ -16,4 +17,5 @@ __all__ = [
     "RefreshToken",
     "AuditLog",
     "Payment",
+    "PasswordResetToken",
 ]

@@ -1,14 +1,25 @@
-"""Email notification service — Resend API.
+"""Email notification service — SMTP (stdlib smtplib).
 
 All public functions are synchronous so they can be called directly from
 Celery workers and wrapped in asyncio.to_thread() from async FastAPI routes.
-They no-op gracefully when RESEND_API_KEY is not configured.
+They no-op gracefully when SMTP_HOST is not configured.
+
+SMTP configuration (set via environment / Fly secrets):
+  SMTP_HOST       — e.g. smtp.gmail.com or smtp.mailgun.org
+  SMTP_PORT       — 587 (STARTTLS, default) or 465 (implicit SSL)
+  SMTP_USER       — login username (usually the sender address)
+  SMTP_PASSWORD   — app password / API key used as SMTP password
+  SMTP_USE_SSL    — set to true for port-465 implicit SSL; false uses STARTTLS
+  SMTP_FROM       — display name + address, e.g. "EazziDoc <noreply@eazzidoc.com>"
+  SUPPORT_EMAIL   — destination for contact-form submissions; falls back to SMTP_USER
 """
 
 import logging
+import smtplib
 from datetime import datetime
-
-import resend
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.utils import parseaddr
 
 from app.core.config import settings
 
@@ -64,26 +75,45 @@ def _send(
     bcc: str | None = None,
     reply_to: str | None = None,
 ) -> None:
-    """Send via Resend API. Silently skips when RESEND_API_KEY is not set."""
-    if not settings.RESEND_API_KEY:
-        logger.debug("Resend not configured — skipping email '%s' to %s", subject, to)
+    """Send via SMTP. Silently skips when SMTP_HOST is not configured."""
+    if not settings.SMTP_HOST:
+        logger.debug("SMTP not configured — skipping email '%s' to %s", subject, to)
         return
 
-    resend.api_key = settings.RESEND_API_KEY
-
-    params: resend.Emails.SendParams = {
-        "from": settings.SMTP_FROM,
-        "to": [to],
-        "subject": subject,
-        "html": html,
-    }
-    if bcc:
-        params["bcc"] = [bcc]
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = settings.SMTP_FROM
+    msg["To"] = to
     if reply_to:
-        params["reply_to"] = [reply_to]
+        msg["Reply-To"] = reply_to
+    if bcc:
+        msg["Bcc"] = bcc
+
+    msg.attach(MIMEText(html, "html", "utf-8"))
+
+    recipients = [to]
+    if bcc:
+        recipients.append(bcc)
+
+    # SMTP MAIL FROM must be a bare address — strip the display name.
+    # "EazziDoc <noreply@eazzidoc.app>" → "noreply@eazzidoc.app"
+    _, envelope_sender = parseaddr(settings.SMTP_FROM)
+    envelope_sender = envelope_sender or settings.SMTP_FROM
 
     try:
-        resend.Emails.send(params)
+        if settings.SMTP_USE_SSL:
+            with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT) as conn:
+                if settings.SMTP_USER:
+                    conn.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                conn.sendmail(envelope_sender, recipients, msg.as_string())
+        else:
+            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as conn:
+                conn.ehlo()
+                conn.starttls()
+                conn.ehlo()
+                if settings.SMTP_USER:
+                    conn.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                conn.sendmail(envelope_sender, recipients, msg.as_string())
         logger.info("Email sent — to=%s subject=%r", to, subject)
     except Exception:
         logger.exception("Failed to send email — to=%s subject=%r", to, subject)
@@ -476,4 +506,91 @@ def send_contact_message(
         subject=f"[EazziDoc] Message from {sender_label}",
         html=_base(f"Message from {sender_label} — EazziDoc", body),
         reply_to=from_email,
+    )
+
+
+def send_support_request(
+    from_name: str,
+    from_email: str,
+    from_role: str,
+    subject: str,
+    message: str,
+) -> None:
+    """Forward a support/contact-form submission to the configured support inbox."""
+    support_dest = settings.SUPPORT_EMAIL or settings.SMTP_USER
+    if not support_dest:
+        logger.warning("No SUPPORT_EMAIL or SMTP_USER configured — dropping support message")
+        return
+
+    role_label = (
+        "Doctor" if from_role == "doctor" else "Patient" if from_role == "patient" else "Admin"
+    )
+    body = f"""
+    <h2 style="margin:0 0 8px;font-size:20px;color:#111827;">Support request</h2>
+    <table cellpadding="0" cellspacing="0" width="100%"
+           style="background:{_LIGHT_BG};border-radius:8px;padding:20px;margin-bottom:28px;">
+      <tr>
+        <td style="font-size:13px;color:#6b7280;padding-bottom:6px;">From</td>
+        <td style="font-size:14px;font-weight:600;color:#111827;text-align:right;">{from_name}</td>
+      </tr>
+      <tr>
+        <td style="font-size:13px;color:#6b7280;padding-top:6px;">Email</td>
+        <td style="font-size:14px;color:#111827;text-align:right;padding-top:6px;">
+          <a href="mailto:{from_email}" style="color:{_PRIMARY};">{from_email}</a>
+        </td>
+      </tr>
+      <tr>
+        <td style="font-size:13px;color:#6b7280;padding-top:6px;">Role</td>
+        <td style="font-size:14px;color:#111827;text-align:right;padding-top:6px;">{role_label}</td>
+      </tr>
+      <tr>
+        <td style="font-size:13px;color:#6b7280;padding-top:6px;">Subject</td>
+        <td style="font-size:14px;color:#111827;text-align:right;padding-top:6px;">{subject}</td>
+      </tr>
+    </table>
+    <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:20px;
+                margin-bottom:28px;">
+      <p style="margin:0;font-size:14px;color:#111827;line-height:1.7;white-space:pre-wrap;">{message}</p>
+    </div>
+    <p style="font-size:13px;color:#6b7280;">Reply directly to this email to respond to {from_name}.</p>
+    """
+    _send(
+        to=support_dest,
+        subject=f"[EazziDoc Support] {subject}",
+        html=_base("Support Request — EazziDoc", body),
+        reply_to=from_email,
+    )
+
+
+def send_password_reset(email: str, name: str, token: str) -> None:
+    reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+
+    body = f"""
+    <h2 style="margin:0 0 8px;font-size:20px;color:#111827;">Reset your password</h2>
+    <p style="margin:0 0 20px;font-size:15px;color:#4b5563;line-height:1.6;">
+      Hi {name}, we received a request to reset the password for your EazziDoc account.
+      Click the button below to choose a new password.
+    </p>
+    <p style="margin:0 0 24px;">
+      <a href="{reset_url}"
+         style="display:inline-block;background:{_PRIMARY};color:#ffffff;
+                font-size:15px;font-weight:600;padding:13px 28px;
+                border-radius:8px;text-decoration:none;">
+        Reset my password →
+      </a>
+    </p>
+    <p style="margin:0 0 8px;font-size:13px;color:#6b7280;">
+      This link expires in {settings.PASSWORD_RESET_EXPIRE_MINUTES} minutes.
+      If you did not request a password reset, you can safely ignore this email —
+      your password will not change.
+    </p>
+    <p style="margin:0;font-size:12px;color:#9ca3af;">
+      If the button above does not work, copy and paste this link into your browser:<br>
+      <a href="{reset_url}" style="color:{_PRIMARY};word-break:break-all;">{reset_url}</a>
+    </p>
+    """
+    _send(
+        to=email,
+        subject="[EazziDoc] Reset your password",
+        html=_base("Reset Your Password — EazziDoc", body),
     )

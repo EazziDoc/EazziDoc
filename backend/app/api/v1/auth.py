@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from datetime import UTC, datetime
+import secrets
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from sqlalchemy.exc import IntegrityError
@@ -20,14 +21,17 @@ from app.core.security import (
     verify_password,
 )
 from app.models.doctor import Doctor
+from app.models.password_reset_token import PasswordResetToken
 from app.models.patient import Patient
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.schemas.auth import (
     AdminRegisterRequest,
+    ForgotPasswordRequest,
     LoginRequest,
     RegisterRequest,
     RegisterResponse,
+    ResetPasswordRequest,
     TokenResponse,
     UserResponse,
 )
@@ -255,6 +259,101 @@ async def logout(
             await db.commit()
 
     response.delete_cookie(key=REFRESH_COOKIE, path="/api/v1/auth")
+
+
+@router.post("/forgot-password", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("5/minute")
+async def forgot_password(
+    request: Request,
+    body: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Request a password reset link.
+
+    Always returns 204 — we never reveal whether the email exists.
+    """
+    result = await db.execute(select(User).where(User.email == body.email))
+    user = result.scalar_one_or_none()
+    if not user or not user.is_active:
+        return  # silent no-op — don't leak account existence
+
+    # Invalidate any existing unused tokens for this user
+    existing = await db.execute(
+        select(PasswordResetToken).where(
+            PasswordResetToken.user_id == user.id,
+            PasswordResetToken.used.is_(False),
+        )
+    )
+    for tok in existing.scalars().all():
+        await db.delete(tok)
+
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hash_token(raw_token)
+    expires_at = datetime.now(UTC) + timedelta(minutes=settings.PASSWORD_RESET_EXPIRE_MINUTES)
+    db.add(
+        PasswordResetToken(
+            user_id=user.id,
+            token_hash=token_hash,
+            expires_at=expires_at,
+        )
+    )
+    await db.commit()
+
+    # Resolve display name for the email
+    first_name = user.email.split("@")[0]
+    if user.role == "patient":
+        profile_result = await db.execute(select(Patient).where(Patient.user_id == user.id))
+        profile = profile_result.scalar_one_or_none()
+        if profile:
+            first_name = profile.first_name
+    elif user.role == "doctor":
+        profile_result = await db.execute(select(Doctor).where(Doctor.user_id == user.id))
+        profile = profile_result.scalar_one_or_none()
+        if profile:
+            first_name = profile.first_name
+
+    try:
+        asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: email_svc.send_password_reset(
+                email=user.email,
+                name=first_name,
+                token=raw_token,
+            ),
+        )
+    except Exception:
+        logger.exception("Password reset email failed for %s", user.email)
+
+
+@router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("10/minute")
+async def reset_password(
+    request: Request,
+    body: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Consume a reset token and update the user's password."""
+    token_hash = hash_token(body.token)
+    result = await db.execute(
+        select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash)
+    )
+    stored = result.scalar_one_or_none()
+
+    if not stored or stored.used or stored.expires_at.replace(tzinfo=UTC) < datetime.now(UTC):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset link. Please request a new one.",
+        )
+
+    user_result = await db.execute(select(User).where(User.id == stored.user_id))
+    user = user_result.scalar_one_or_none()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Account not found")
+
+    user.password_hash = hash_password(body.password)
+    stored.used = True
+    await db.commit()
+    logger.info("Password reset completed for user %s", user.id)
 
 
 @router.get("/me", response_model=UserResponse)

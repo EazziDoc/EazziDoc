@@ -52,15 +52,25 @@ export default function LoginPage() {
           required
           autoComplete="email"
         />
-        <PasswordInput
-          id="password"
-          label="Password"
-          placeholder="••••••••"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          autoComplete="current-password"
-        />
+        <div>
+          <PasswordInput
+            id="password"
+            label="Password"
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            autoComplete="current-password"
+          />
+          <div className="mt-1 text-right">
+            <Link
+              href="/forgot-password"
+              className="text-xs text-primary-600 hover:underline dark:text-primary-400"
+            >
+              Forgot password?
+            </Link>
+          </div>
+        </div>
         {error && (
           <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
         )}
