@@ -95,11 +95,10 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET: str = ""
     CONSULTATION_FEE_CENTS: int = 5000  # $50.00
 
-    # CORS — extend via BACKEND_CORS_ORIGINS env var / Fly secret for additional origins
-    BACKEND_CORS_ORIGINS: list[str] = [
-        "http://localhost:3000",
-        "https://eazzi-doc.vercel.app",
-    ]
+    # CORS — set via BACKEND_CORS_ORIGINS Fly secret in production.
+    # Local dev default keeps http://localhost:3000 so the frontend works without env vars.
+    # Production must set this explicitly (e.g. https://eazzidoc.app,https://www.eazzidoc.app).
+    BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000"]
 
     @property
     def is_production(self) -> bool:
