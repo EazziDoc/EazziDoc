@@ -107,8 +107,21 @@ class Settings(BaseSettings):
 
     # CORS — set via BACKEND_CORS_ORIGINS Fly secret in production.
     # Local dev default keeps http://localhost:3000 so the frontend works without env vars.
-    # Production must set this explicitly (e.g. https://eazzidoc.app,https://www.eazzidoc.app).
+    # Accepts either a JSON array or a comma-separated string:
+    #   fly secrets set BACKEND_CORS_ORIGINS='https://eazzidoc.app,https://www.eazzidoc.app'
     BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+
+    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: object) -> list[str]:
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("["):
+                import json
+
+                return json.loads(v)
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v  # type: ignore[return-value]
 
     @property
     def is_production(self) -> bool:
