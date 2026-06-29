@@ -15,10 +15,11 @@ class _CommaListEnvSource(EnvSettingsSource):
     ) -> Any:
         if field_name in self._COMMA_LIST_FIELDS and isinstance(value, str):
             stripped = value.strip()
-            if stripped and not stripped.startswith("["):
-                import json
-
-                return json.dumps([o.strip() for o in stripped.split(",") if o.strip()])
+            if not stripped:
+                return None  # empty string → fall back to field default
+            if not stripped.startswith("["):
+                return [o.strip() for o in stripped.split(",") if o.strip()]
+            # JSON array → let the parent decode it normally
         return super().prepare_field_value(field_name, field, value, value_is_complex)
 
 
