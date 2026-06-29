@@ -1,11 +1,35 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, EnvSettingsSource, SettingsConfigDict
+
+
+class _CommaListEnvSource(EnvSettingsSource):
+    """pydantic-settings v2 calls json.loads() on list[str] fields before validators run.
+    Pre-convert comma-separated strings to JSON arrays so it doesn't crash."""
+
+    _COMMA_LIST_FIELDS = {"BACKEND_CORS_ORIGINS"}
+
+    def prepare_field_value(
+        self, field_name: str, field: Any, value: Any, value_is_complex: bool
+    ) -> Any:
+        if field_name in self._COMMA_LIST_FIELDS and isinstance(value, str):
+            stripped = value.strip()
+            if stripped and not stripped.startswith("["):
+                import json
+
+                return json.dumps([o.strip() for o in stripped.split(",") if o.strip()])
+        return super().prepare_field_value(field_name, field, value, value_is_complex)
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @classmethod
+    def settings_customise_sources(
+        cls, settings_cls, init_settings, env_settings, dotenv_settings, **kwargs
+    ):
+        return (init_settings, _CommaListEnvSource(settings_cls), dotenv_settings)
 
     ENVIRONMENT: Literal["development", "staging", "production"] = "development"
 
@@ -107,7 +131,8 @@ class Settings(BaseSettings):
 
     # CORS — set via BACKEND_CORS_ORIGINS Fly secret in production.
     # Local dev default keeps http://localhost:3000 so the frontend works without env vars.
-    # Production must set this explicitly (e.g. https://eazzidoc.app,https://www.eazzidoc.app).
+    # Accepts either a JSON array or a comma-separated string:
+    #   fly secrets set BACKEND_CORS_ORIGINS='https://eazzidoc.app,https://www.eazzidoc.app'
     BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000"]
 
     @property
