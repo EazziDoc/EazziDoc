@@ -27,9 +27,9 @@ class Settings(BaseSettings):
 
     @classmethod
     def settings_customise_sources(
-        cls, settings_cls, init_settings, env_settings, dotenv_settings, secret_settings
+        cls, settings_cls, init_settings, env_settings, dotenv_settings, **kwargs
     ):
-        return (init_settings, _CommaListEnvSource(settings_cls), dotenv_settings, secret_settings)
+        return (init_settings, _CommaListEnvSource(settings_cls), dotenv_settings)
 
     ENVIRONMENT: Literal["development", "staging", "production"] = "development"
 
