@@ -19,6 +19,7 @@ import smtplib
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import parseaddr
 
 from app.core.config import settings
 
@@ -94,12 +95,17 @@ def _send(
     if bcc:
         recipients.append(bcc)
 
+    # SMTP MAIL FROM must be a bare address — strip the display name.
+    # "EazziDoc <noreply@eazzidoc.app>" → "noreply@eazzidoc.app"
+    _, envelope_sender = parseaddr(settings.SMTP_FROM)
+    envelope_sender = envelope_sender or settings.SMTP_FROM
+
     try:
         if settings.SMTP_USE_SSL:
             with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT) as conn:
                 if settings.SMTP_USER:
                     conn.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-                conn.sendmail(settings.SMTP_FROM, recipients, msg.as_string())
+                conn.sendmail(envelope_sender, recipients, msg.as_string())
         else:
             with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as conn:
                 conn.ehlo()
@@ -107,7 +113,7 @@ def _send(
                 conn.ehlo()
                 if settings.SMTP_USER:
                     conn.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-                conn.sendmail(settings.SMTP_FROM, recipients, msg.as_string())
+                conn.sendmail(envelope_sender, recipients, msg.as_string())
         logger.info("Email sent — to=%s subject=%r", to, subject)
     except Exception:
         logger.exception("Failed to send email — to=%s subject=%r", to, subject)
